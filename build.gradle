@@ -8,28 +8,33 @@ buildscript {
 }
 plugins {
     id 'application'
-    id "com.google.protobuf" version "0.8.17"
+    id "com.google.protobuf" version "0.9.6"
 }
 
 version = '1.0'
-sourceCompatibility = 1.8
-targetCompatibility = 1.8
-
-mainClassName = "com.lttldrgn.portochat.client.ClientLauncher"
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+ext {
+    mainClassName = "com.lttldrgn.portochat.client.ClientLauncher"
+}
+application {
+    mainClass = rootProject.ext.mainClassName
+}
 
 repositories {
     mavenCentral()
 }
 dependencies {
-    implementation 'com.google.protobuf:protobuf-java:3.17.3'
+    implementation 'com.google.protobuf:protobuf-java:3.25.8'
 }
 
 protobuf {
-    generatedFilesBaseDir = "$projectDir/src/"
     // Configure the protoc executable
     protoc {
         // Download from repositories
-        artifact = 'com.google.protobuf:protoc:3.0.0'
+        artifact = 'com.google.protobuf:protoc:3.25.8'
     }
 }
 
@@ -37,7 +42,7 @@ task fullJar(type: Jar) {
 	manifest {
         attributes 'Implementation-Title': 'Gradle Jar File',
             'Implementation-Version': archiveVersion,
-            'Main-Class': mainClassName
+            'Main-Class': rootProject.ext.mainClassName
     }
     archiveBaseName = 'Port-O-Chat'
     from { configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
@@ -57,18 +62,18 @@ task deploy(type: Copy, dependsOn:'build') {
 task debug(type: JavaExec) {
     debug = true
     classpath = sourceSets.main.runtimeClasspath
-    main = mainClassName
+    mainClass = mainClassName
 }
 
 task runServer(type: JavaExec) {
     classpath = sourceSets.main.runtimeClasspath
-    main = 'com.lttldrgn.portochat.server.ServerLauncher'
+    mainClass = 'com.lttldrgn.portochat.server.ServerLauncher'
 }
 
 task debugServer(type: JavaExec) {
     debug = true
     classpath = sourceSets.main.runtimeClasspath
-    main = 'com.lttldrgn.portochat.server.ServerLauncher'
+    mainClass = 'com.lttldrgn.portochat.server.ServerLauncher'
 }
 
 allprojects {
