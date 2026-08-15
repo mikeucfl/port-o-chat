@@ -45,12 +45,12 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, phase: action.phase }
 
     case 'CONNECTION_STATUS':
-      return {
-        ...state,
-        connection: action.event.state,
-        connectionError: action.event.error,
-        phase: action.event.state === 'connected' ? 'chat' : state.phase
-      }
+      // Deliberately does NOT transition to 'chat' here: a TCP connect
+      // succeeding only means the socket is up, not that our nickname was
+      // accepted. Advancing on that alone would drop a UserNameInUse
+      // rejection into a black hole once the chat UI is already showing.
+      // The 'chat' phase transition instead happens on NAME_RESULT success.
+      return { ...state, connection: action.event.state, connectionError: action.event.error }
 
     case 'SET_IDENTITY':
       return { ...state, myUserId: action.userId, myNickname: action.nickname }
@@ -154,7 +154,8 @@ export function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         myNickname: action.success ? action.name : state.myNickname,
-        nameError: action.success ? null : `"${action.name}" is already taken.`
+        nameError: action.success ? null : `"${action.name}" is already taken.`,
+        phase: action.success ? 'chat' : state.phase
       }
 
     case 'GENERAL_ERROR':

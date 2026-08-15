@@ -4,7 +4,7 @@ import { useStore } from '../state/store'
 import styles from './AuthLayout.module.css'
 
 export function JoinSetupScreen() {
-  const { dispatch } = useStore()
+  const { state, dispatch } = useStore()
   const [nickname, setNickname] = useState('')
   const [host, setHost] = useState('')
   const [port, setPort] = useState(String(DEFAULT_SERVER_PORT))
@@ -18,6 +18,15 @@ export function JoinSetupScreen() {
       if (config.lastPort) setPort(String(config.lastPort))
     })
   }, [])
+
+  // Surfaces a nickname-in-use rejection back onto this screen — a TCP
+  // connect succeeding doesn't mean the server accepted the nickname.
+  useEffect(() => {
+    if (busy && state.nameError) {
+      setError(state.nameError)
+      setBusy(false)
+    }
+  }, [state.nameError, busy])
 
   async function handleJoin(): Promise<void> {
     const trimmedName = nickname.trim()

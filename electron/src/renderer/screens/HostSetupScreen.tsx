@@ -1,14 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { DEFAULT_SERVER_PORT, MAX_NICKNAME_LENGTH } from '@shared/constants'
 import { useStore } from '../state/store'
 import styles from './AuthLayout.module.css'
 
 export function HostSetupScreen() {
-  const { dispatch } = useStore()
+  const { state, dispatch } = useStore()
   const [nickname, setNickname] = useState('')
   const [port, setPort] = useState(String(DEFAULT_SERVER_PORT))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Set once the server actually binds, so a nickname retry after a
+  // UserNameInUse rejection reconnects to the already-running server
+  // instead of trying (and failing) to bind it a second time.
+  const boundPortRef = useRef<number | null>(null)
 
   useEffect(() => {
     window.portochat.getConfig().then((config) => {
@@ -16,6 +20,16 @@ export function HostSetupScreen() {
       if (config.lastPort) setPort(String(config.lastPort))
     })
   }, [])
+
+  // Surfaces a nickname-in-use rejection back onto this screen instead of
+  // silently stranding the user once past the "connected" state — a TCP
+  // connect succeeding doesn't mean the nickname was accepted.
+  useEffect(() => {
+    if (busy && state.nameError) {
+      setError(state.nameError)
+      setBusy(false)
+    }
+  }, [state.nameError, busy])
 
   async function handleStart(): Promise<void> {
     const trimmedName = nickname.trim()
@@ -32,10 +46,13 @@ export function HostSetupScreen() {
     setBusy(true)
     setError(null)
     try {
-      const result = await window.portochat.hostStart(portNumber)
-      dispatch({ type: 'HOST_INFO', port: result.port, lanAddresses: result.lanAddresses })
-      await window.portochat.clientConnect('127.0.0.1', result.port, trimmedName)
-      await window.portochat.setConfig({ lastNickname: trimmedName, lastPort: result.port })
+      if (boundPortRef.current === null) {
+        const result = await window.portochat.hostStart(portNumber)
+        boundPortRef.current = result.port
+        dispatch({ type: 'HOST_INFO', port: result.port, lanAddresses: result.lanAddresses })
+      }
+      await window.portochat.clientConnect('127.0.0.1', boundPortRef.current, trimmedName)
+      await window.portochat.setConfig({ lastNickname: trimmedName, lastPort: boundPortRef.current })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start the server.')
       setBusy(false)
@@ -80,13 +97,14 @@ export function HostSetupScreen() {
             id="port"
             className={styles.input}
             value={port}
+            disabled={boundPortRef.current !== null}
             onChange={(e) => setPort(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleStart()}
           />
         </div>
 
         <button className={styles.primaryButton} onClick={handleStart} disabled={busy}>
-          {busy ? 'Starting…' : 'Start hosting'}
+          {busy ? 'Starting…' : boundPortRef.current !== null ? 'Try this nickname' : 'Start hosting'}
         </button>
         <p className={styles.errorText}>{error}</p>
         <p className={styles.hint}>
