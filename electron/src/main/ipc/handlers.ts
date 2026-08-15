@@ -117,6 +117,11 @@ export class SessionController {
     session.on('identity', (userId: string, username: string) => {
       this.ensureKeyManager()
       this.send<IdentityEvent>(IPC_EVENT.identity, { userId, nickname: username })
+      // Broadcasts only tell us about users connecting/renaming *after* we
+      // did; without this, anyone already online when we joined would
+      // never show up (no DM entry, no E2E identity key) until they
+      // happened to do something that re-broadcasts their UserData.
+      session.requestUserList()
     })
 
     await session.connect(host, port, nickname, this.identity.publicKeyRaw)
