@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { MAX_NICKNAME_LENGTH } from '@shared/constants'
 import { useStore } from '../state/store'
 import { conversationKey, type ConversationRef } from '../state/types'
+import { ConfirmDialog } from './ConfirmDialog'
 import { CreateChannelDialog } from './CreateChannelDialog'
 import styles from './Sidebar.module.css'
 
@@ -12,6 +13,7 @@ export function Sidebar({
 }) {
   const { state, dispatch } = useStore()
   const [showCreateChannel, setShowCreateChannel] = useState(false)
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [renameDraft, setRenameDraft] = useState('')
 
@@ -150,10 +152,7 @@ export function Sidebar({
         <button
           className={styles.iconButton}
           title="Disconnect"
-          onClick={() => {
-            window.portochat.clientDisconnect()
-            dispatch({ type: 'RESET_SESSION' })
-          }}
+          onClick={() => setConfirmDisconnect(true)}
         >
           ⏻
         </button>
@@ -161,6 +160,24 @@ export function Sidebar({
 
       {showCreateChannel && (
         <CreateChannelDialog onCreate={createChannel} onClose={() => setShowCreateChannel(false)} />
+      )}
+
+      {confirmDisconnect && (
+        <ConfirmDialog
+          title="Disconnect?"
+          message={
+            state.hostInfo
+              ? "You're hosting this server — disconnecting will also shut it down and disconnect everyone else in it."
+              : "You'll be disconnected from the server and returned to the launch screen."
+          }
+          confirmLabel="Disconnect"
+          danger
+          onConfirm={() => {
+            window.portochat.clientDisconnect()
+            dispatch({ type: 'RESET_SESSION' })
+          }}
+          onClose={() => setConfirmDisconnect(false)}
+        />
       )}
     </aside>
   )

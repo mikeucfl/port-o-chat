@@ -157,6 +157,31 @@ export class SessionController {
 
   // ---- outgoing actions -------------------------------------------------------
 
+  /**
+   * The server never echoes a message back to its own sender (same as the
+   * original Java server) — the Java *client* worked around this with local
+   * optimistic echo the instant the user hit send. This is that same local
+   * echo, reusing the exact chat:message event/DTO shape incoming messages
+   * use so the renderer needs no separate "is this mine" display path.
+   */
+  private echoOwnMessage(
+    myUserId: string,
+    params: SendMessageParams,
+    e2e: boolean
+  ): void {
+    this.send<ChatMessageDto>(IPC_EVENT.chatMessage, {
+      clientMessageId: randomUUID(),
+      senderId: myUserId,
+      destinationId: params.destinationId,
+      isChannel: params.isChannel,
+      isAction: !!params.isAction,
+      message: params.text,
+      timestamp: Date.now(),
+      e2e,
+      decryptFailed: false
+    })
+  }
+
   sendMessage(params: SendMessageParams): void {
     const session = this.session
     const myUserId = session?.userId
@@ -191,6 +216,7 @@ export class SessionController {
           e2eNonce: sealed.nonce,
           e2eKeyEpoch: keyState.epoch
         })
+        this.echoOwnMessage(myUserId, params, true)
         return
       }
       session.sendChatMessage({
@@ -199,6 +225,7 @@ export class SessionController {
         message: params.text,
         isAction: params.isAction
       })
+      this.echoOwnMessage(myUserId, params, false)
       return
     }
 
@@ -229,6 +256,7 @@ export class SessionController {
         e2eCiphertext: sealed.ciphertext,
         e2eNonce: sealed.nonce
       })
+      this.echoOwnMessage(myUserId, params, true)
       return
     }
 
@@ -238,6 +266,7 @@ export class SessionController {
       message: params.text,
       isAction: params.isAction
     })
+    this.echoOwnMessage(myUserId, params, false)
   }
 
   joinChannel(name: string, e2e: boolean): void {
