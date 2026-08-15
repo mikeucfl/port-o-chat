@@ -13,6 +13,7 @@ export const MAX_PROTOBUF_SIZE = 32 * 1024
 export const MAX_MESSAGE_TEXT_LENGTH = 4000
 export const MAX_NICKNAME_LENGTH = 32
 export const MAX_CHANNEL_NAME_LENGTH = 64
+export const MAX_CHANNEL_TOPIC_LENGTH = 200
 
 /**
  * AES-256-GCM ciphertext is ~plaintext length (no padding) + a 16-byte auth

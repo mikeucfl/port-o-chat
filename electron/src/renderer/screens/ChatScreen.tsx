@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { ChannelTopicBar } from '../components/ChannelTopicBar'
 import { Composer } from '../components/Composer'
 import { EncryptionBadge } from '../components/EncryptionBadge'
 import { FingerprintDialog } from '../components/FingerprintDialog'
@@ -124,6 +125,15 @@ export function ChatScreen() {
                   </button>
                 )}
               </div>
+              {active.type === 'channel' && (
+                <ChannelTopicBar
+                  channel={active.name}
+                  topic={state.channels[active.name]?.topic ?? ''}
+                  canEdit={
+                    !!state.myUserId && state.channels[active.name]?.creatorId === state.myUserId
+                  }
+                />
+              )}
               {dmWarning && (
                 <KeyChangeWarningBanner
                   userName={title}

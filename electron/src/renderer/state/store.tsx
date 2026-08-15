@@ -24,6 +24,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       api.onChannelAdded((channel) => dispatch({ type: 'CHANNEL_ADDED', channel })),
       api.onChannelRemoved((name) => dispatch({ type: 'CHANNEL_REMOVED', name })),
       api.onChannelJoinPart((event) => dispatch({ type: 'CHANNEL_JOIN_PART', event })),
+      api.onChannelTopicChanged((event) =>
+        dispatch({ type: 'CHANNEL_TOPIC_CHANGED', channel: event.channel, topic: event.topic })
+      ),
       api.onUserList((users, channel) => dispatch({ type: 'USER_LIST', users, channel })),
       api.onUserConnectionStatus((event) => dispatch({ type: 'USER_CONNECTION_STATUS', event })),
       api.onNameResult((event) => dispatch({ type: 'NAME_RESULT', ...event })),

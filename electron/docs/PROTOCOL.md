@@ -82,6 +82,7 @@ ignore it (proto3 unknown-field skipping) instead of breaking.
 | `response` | 9 | Unused by this app in either direction — see legacy note above |
 | `userList` | 10 | See below |
 | `keyShare` | 11 | **(new)** See below |
+| `channelTopic` | 12 | **(new)** See below. Not part of E2E — a plain, unrelated feature addition (channel topics don't exist in the Java app at all). |
 
 **Ping/Pong**: server → client every 60s (5s initial delay); client must
 reply Pong with the same timestamp within 3 minutes or the server closes
@@ -111,6 +112,7 @@ Carries both channel messages and DMs.
 | `UserNameInUse` | 0 | Inherited |
 | `ChannelDoesNotExist` | 1 | Inherited. Also now returned when a channel message is sent by a non-member (the Java server didn't check membership) |
 | `E2EChannelRequiresSupport` | 2 | **(new)** Returned when a client without an E2E identity key tries to join a channel that's flagged end-to-end encrypted |
+| `NotAuthorized` | 3 | **(new)** Returned when a client tries to set a channel's topic and isn't that channel's creator |
 
 `additionalMessage` (field 2) carries context (the name/id in question).
 
@@ -138,7 +140,7 @@ exists — the flag is immutable after creation.
 |---|---|---|---|
 | `channelJoin` | 1 | S→C (broadcast to channel, excluding joiner) | `{channel, userId}` |
 | `channelPart` | 2 | C→S (to leave) and S→C (broadcast) | `{channel, userId}` — client only ever sets `channel`; server fills `userId` |
-| `channelAdded` | 3 | S→C (broadcast to everyone) | `{channel, e2eChannel}` — `e2eChannel` is **(new)** |
+| `channelAdded` | 3 | S→C (broadcast to everyone) | `{channel, e2eChannel, creatorId}` — `e2eChannel` and `creatorId` are **(new)**. `creatorId` is the only user ever authorized to later set the channel's topic. |
 | `channelRemoved` | 4 | S→C (broadcast to everyone) | `{channel}`, sent when the last member leaves |
 | `userConnectionStatus` | 5 | S→C (broadcast) | `{user: UserData, connected}` |
 | `userDoesNotExist` | 6 | S→C | `{user, missingId}` — `missingId` is **(new)**; `user` is left empty in this app (see PORTING-NOTES.md for the Java bug this replaces) |
@@ -163,7 +165,7 @@ same as the Java server did.
 | Field | # | Notes |
 |---|---|---|
 | `channels` | 1 | `StringList` of channel names — inherited, still populated for legacy clients |
-| `channelMeta` | 2 | **(new)** `repeated ChannelMetadata {channel, e2eChannel}` — per-channel E2E flag, parallel to `channels` |
+| `channelMeta` | 2 | **(new)** `repeated ChannelMetadata {channel, e2eChannel, creatorId, topic}` — per-channel E2E flag, creator id, and current topic, parallel to `channels` |
 
 ### `KeyShare` — **(new message, envelope field 11)**
 
@@ -183,6 +185,25 @@ doesn't specially interpret — it has no code path that decodes `wrappedKey`.
 
 See [CRYPTO.md](CRYPTO.md) for the full key-wrap/rotation protocol this
 message participates in.
+
+### `ChannelTopic` — **(new message, envelope field 12)**
+
+Sets (client→server) or announces (server→everyone) a channel's topic. Not
+related to E2E — a plain feature addition, since the Java app has no
+concept of channel topics at all.
+
+| Field | # |
+|---|---|
+| `channel` | 1 |
+| `topic` | 2 — capped at `MAX_CHANNEL_TOPIC_LENGTH` (200 chars), truncated server-side if longer |
+
+Direction/authorization: a client sends this to *set* the topic; the
+server only accepts it from the channel's `creatorId` (immutable, set at
+creation — see `ChannelAdded` above) and replies `ErrorMessage{NotAuthorized}`
+to anyone else who tries. On success the server broadcasts the same message
+shape to every connected user (not just channel members), so the topic
+shows up in everyone's channel list immediately, matching how `channelAdded`
+is already broadcast server-wide rather than just to members.
 
 ## Server state model
 

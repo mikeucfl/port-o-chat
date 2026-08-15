@@ -389,4 +389,72 @@ describe('ChatRouter', () => {
       expect(bob.peer.sent.find((m) => m.notification?.keyRotationNotice)).toBeUndefined()
     })
   })
+
+  describe('channel topics (creator-only)', () => {
+    it('lets the creator set the topic and broadcasts it to everyone', () => {
+      const alice = connectAndName('alice')
+      const bob = connectAndName('bob')
+      router.handleMessage(
+        alice.peer,
+        msg({ request: { requestType: RequestType.ChannelJoin, stringRequestData: { value: '#general' } } })
+      )
+      bob.peer.sent.length = 0
+
+      router.handleMessage(alice.peer, msg({ channelTopic: { channel: '#general', topic: 'chat about stuff' } }))
+
+      expect(channels.get('#general')?.topic).toBe('chat about stuff')
+      const received = bob.peer.sent.find((m) => m.channelTopic)
+      expect(received?.channelTopic?.topic).toBe('chat about stuff')
+    })
+
+    it('rejects a topic change from a non-creator member', () => {
+      const alice = connectAndName('alice')
+      const bob = connectAndName('bob')
+      router.handleMessage(
+        alice.peer,
+        msg({ request: { requestType: RequestType.ChannelJoin, stringRequestData: { value: '#general' } } })
+      )
+      router.handleMessage(
+        bob.peer,
+        msg({ request: { requestType: RequestType.ChannelJoin, stringRequestData: { value: '#general' } } })
+      )
+
+      router.handleMessage(bob.peer, msg({ channelTopic: { channel: '#general', topic: 'sneaky' } }))
+
+      expect(bob.peer.last()?.errorMessage?.errorType).toBe(ErrorType.NotAuthorized)
+      expect(channels.get('#general')?.topic).toBe('')
+    })
+
+    it('rejects a topic change for a channel that does not exist', () => {
+      const alice = connectAndName('alice')
+
+      router.handleMessage(alice.peer, msg({ channelTopic: { channel: '#nope', topic: 'x' } }))
+
+      expect(alice.peer.last()?.errorMessage?.errorType).toBe(ErrorType.ChannelDoesNotExist)
+    })
+
+    it('a fresh creator can set the topic after the channel is torn down and recreated', () => {
+      const alice = connectAndName('alice')
+      router.handleMessage(
+        alice.peer,
+        msg({ request: { requestType: RequestType.ChannelJoin, stringRequestData: { value: '#general' } } })
+      )
+      router.handleMessage(alice.peer, msg({ notification: { channelPart: { channel: '#general' } } }))
+      expect(channels.channelExists('#general')).toBe(false)
+
+      const bob = connectAndName('bob')
+      router.handleMessage(
+        bob.peer,
+        msg({ request: { requestType: RequestType.ChannelJoin, stringRequestData: { value: '#general' } } })
+      )
+
+      // alice was the original creator but the channel was torn down; bob
+      // (the new creator) should now be the one authorized to set the topic.
+      router.handleMessage(alice.peer, msg({ channelTopic: { channel: '#general', topic: 'nope' } }))
+      expect(alice.peer.last()?.errorMessage?.errorType).toBe(ErrorType.NotAuthorized)
+
+      router.handleMessage(bob.peer, msg({ channelTopic: { channel: '#general', topic: 'bobs topic' } }))
+      expect(channels.get('#general')?.topic).toBe('bobs topic')
+    })
+  })
 })

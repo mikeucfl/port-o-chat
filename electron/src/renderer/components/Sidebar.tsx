@@ -72,6 +72,7 @@ export function Sidebar({
         {channelNames.map((name) => {
           const ref: ConversationRef = { type: 'channel', name }
           const active = activeKey === conversationKey(ref)
+          const topic = state.channels[name]?.topic
           return (
             <button
               key={name}
@@ -79,7 +80,10 @@ export function Sidebar({
               onClick={() => openChannel(name)}
             >
               {state.channels[name]?.e2e && <span className={styles.lockIcon}>🔒</span>}
-              <span className={styles.itemName}>{name}</span>
+              <span className={styles.itemTextGroup}>
+                <span className={styles.itemName}>{name}</span>
+                {topic && <span className={styles.itemTopic}>{topic}</span>}
+              </span>
             </button>
           )
         })}

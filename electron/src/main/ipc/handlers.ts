@@ -6,6 +6,7 @@ import type {
   ChannelDto,
   ChannelJoinPartEvent,
   ChannelKeyRotatedEvent,
+  ChannelTopicChangedEvent,
   ChatMessageDto,
   ConnectionStatusEvent,
   ErrorEvent,
@@ -53,7 +54,7 @@ export class SessionController {
   private keyManager: ChannelKeyManager | null = null
   private roster = new Map<string, RosterEntry>()
   private channelMembers = new Map<string, Set<string>>()
-  private channelMeta = new Map<string, { e2e: boolean }>()
+  private channelMeta = new Map<string, { e2e: boolean; creatorId: string; topic: string }>()
   private pendingCreations = new Set<string>()
 
   attachWindow(win: BrowserWindow): void {
@@ -290,6 +291,10 @@ export class SessionController {
     this.session?.setUsername(name)
   }
 
+  setChannelTopic(channel: string, topic: string): void {
+    this.session?.setChannelTopic(channel, topic)
+  }
+
   getFingerprint(userId: string): string | null {
     const key = this.roster.get(userId)?.e2eIdentityKeyRaw
     return key ? computeFingerprint(key) : null
@@ -321,6 +326,9 @@ export class SessionController {
         break
       case 'userList':
         this.handleUserList(message.userList)
+        break
+      case 'channelTopic':
+        this.handleChannelTopic(message.channelTopic)
         break
       case 'keyShare':
         this.handleKeyShare(message.keyShare)
@@ -365,10 +373,23 @@ export class SessionController {
     const dtos: ChannelDto[] = names.map((name) => {
       const meta = metaByName.get(name)
       const e2e = meta?.e2eChannel ?? false
-      this.channelMeta.set(name, { e2e })
-      return { name, e2e }
+      const creatorId = meta?.creatorId ?? ''
+      const topic = meta?.topic ?? ''
+      this.channelMeta.set(name, { e2e, creatorId, topic })
+      return { name, e2e, creatorId, topic }
     })
     this.send<ChannelDto[]>(IPC_EVENT.channelList, dtos)
+  }
+
+  private handleChannelTopic(channelTopic: portochat.IChannelTopic | null | undefined): void {
+    if (!channelTopic?.channel) return
+    const topic = channelTopic.topic ?? ''
+    const existing = this.channelMeta.get(channelTopic.channel)
+    if (existing) existing.topic = topic
+    this.send<ChannelTopicChangedEvent>(IPC_EVENT.channelTopicChanged, {
+      channel: channelTopic.channel,
+      topic
+    })
   }
 
   private handleChatMessage(chatMessage: portochat.IChatMessage | null | undefined): void {
@@ -442,7 +463,9 @@ export class SessionController {
     const message =
       errorMessage.errorType === ErrorType.E2EChannelRequiresSupport
         ? `"${errorMessage.additionalMessage}" is an encrypted channel and requires an E2E-capable client.`
-        : `Channel "${errorMessage.additionalMessage}" does not exist or you are not a member.`
+        : errorMessage.errorType === ErrorType.NotAuthorized
+          ? `Only the creator of "${errorMessage.additionalMessage}" can change its topic.`
+          : `Channel "${errorMessage.additionalMessage}" does not exist or you are not a member.`
     this.send<ErrorEvent>(IPC_EVENT.errorGeneric, { message })
   }
 
@@ -476,14 +499,19 @@ export class SessionController {
     }
 
     if (notification.channelAdded) {
-      const { channel, e2eChannel } = notification.channelAdded
+      const { channel, e2eChannel, creatorId } = notification.channelAdded
       if (channel) {
-        this.channelMeta.set(channel, { e2e: !!e2eChannel })
+        this.channelMeta.set(channel, { e2e: !!e2eChannel, creatorId: creatorId ?? '', topic: '' })
         if (this.pendingCreations.has(channel)) {
           this.pendingCreations.delete(channel)
           if (e2eChannel) this.ensureKeyManager()?.createChannel(channel)
         }
-        this.send<ChannelDto>(IPC_EVENT.channelAdded, { name: channel, e2e: !!e2eChannel })
+        this.send<ChannelDto>(IPC_EVENT.channelAdded, {
+          name: channel,
+          e2e: !!e2eChannel,
+          creatorId: creatorId ?? '',
+          topic: ''
+        })
       }
       return
     }
@@ -580,6 +608,9 @@ export function registerIpcHandlers(controller: SessionController): void {
   ipcMain.handle(IPC_INVOKE.partChannel, (_e, name: string) => controller.partChannel(name))
   ipcMain.handle(IPC_INVOKE.requestChannelList, () => controller.requestChannelList())
   ipcMain.handle(IPC_INVOKE.setNickname, (_e, name: string) => controller.setNickname(name))
+  ipcMain.handle(IPC_INVOKE.setChannelTopic, (_e, channel: string, topic: string) =>
+    controller.setChannelTopic(channel, topic)
+  )
 
   ipcMain.handle(IPC_INVOKE.getFingerprint, (_e, userId: string) => controller.getFingerprint(userId))
   ipcMain.handle(IPC_INVOKE.getMyFingerprint, () => controller.getMyFingerprint())

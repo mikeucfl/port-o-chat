@@ -24,6 +24,13 @@ export interface ChatMessageDto {
 export interface ChannelDto {
   name: string
   e2e: boolean
+  creatorId: string
+  topic: string
+}
+
+export interface ChannelTopicChangedEvent {
+  channel: string
+  topic: string
 }
 
 export interface ConnectionStatusEvent {

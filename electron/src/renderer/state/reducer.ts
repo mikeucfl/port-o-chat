@@ -20,6 +20,7 @@ export type Action =
   | { type: 'CHANNEL_ADDED'; channel: ChannelDto }
   | { type: 'CHANNEL_REMOVED'; name: string }
   | { type: 'CHANNEL_JOIN_PART'; event: ChannelJoinPartEvent }
+  | { type: 'CHANNEL_TOPIC_CHANGED'; channel: string; topic: string }
   | { type: 'CHAT_MESSAGE'; message: ChatMessageDto }
   | { type: 'CLEAR_MESSAGES'; key: string }
   | { type: 'OPEN_CONVERSATION'; ref: ConversationRef }
@@ -83,6 +84,15 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case 'CHANNEL_ADDED':
       return { ...state, channels: { ...state.channels, [action.channel.name]: action.channel } }
+
+    case 'CHANNEL_TOPIC_CHANGED': {
+      const existing = state.channels[action.channel]
+      if (!existing) return state
+      return {
+        ...state,
+        channels: { ...state.channels, [action.channel]: { ...existing, topic: action.topic } }
+      }
+    }
 
     case 'CHANNEL_REMOVED': {
       const channels = { ...state.channels }

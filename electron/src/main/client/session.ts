@@ -160,6 +160,11 @@ export class ChatSession extends EventEmitter {
     this.client.send({ notification: { channelPart: { channel } } })
   }
 
+  /** The server enforces creator-only authorization; a rejection comes back as an ErrorMessage. */
+  setChannelTopic(channel: string, topic: string): void {
+    this.client.send({ channelTopic: { channel, topic } })
+  }
+
   requestChannelList(): void {
     this.client.send({ request: { requestType: RequestType.ChannelList } })
   }

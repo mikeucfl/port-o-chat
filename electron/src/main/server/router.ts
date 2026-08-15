@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import {
   MAX_CHANNEL_NAME_LENGTH,
+  MAX_CHANNEL_TOPIC_LENGTH,
   MAX_E2E_CIPHERTEXT_LENGTH,
   MAX_MESSAGE_TEXT_LENGTH,
   MAX_NICKNAME_LENGTH
@@ -92,6 +93,9 @@ export class ChatRouter {
       case 'keyShare':
         if (message.keyShare) this.handleKeyShare(user, message.keyShare)
         break
+      case 'channelTopic':
+        if (message.channelTopic) this.handleSetChannelTopic(user, message.channelTopic)
+        break
       case 'ping':
         user.peer.send({ pong: { timestamp: message.ping?.timestamp ?? 0 } })
         break
@@ -144,7 +148,12 @@ export class ChatRouter {
     user.peer.send({
       channelList: {
         channels: { values: channels.map((c) => c.name) },
-        channelMeta: channels.map((c) => ({ channel: c.name, e2eChannel: c.e2e }))
+        channelMeta: channels.map((c) => ({
+          channel: c.name,
+          e2eChannel: c.e2e,
+          creatorId: c.creatorId,
+          topic: c.topic
+        }))
       }
     })
   }
@@ -250,10 +259,12 @@ export class ChatRouter {
       return
     }
 
-    const { record, created } = this.channels.ensureChannel(channelName, requestedE2E)
+    const { record, created } = this.channels.ensureChannel(channelName, requestedE2E, user.id)
     if (created) {
       this.broadcastToAll({
-        notification: { channelAdded: { channel: channelName, e2eChannel: record.e2e } }
+        notification: {
+          channelAdded: { channel: channelName, e2eChannel: record.e2e, creatorId: record.creatorId }
+        }
       })
     }
 
@@ -261,6 +272,28 @@ export class ChatRouter {
     this.broadcastToChannel(channelName, user.id, {
       notification: { channelJoin: { channel: channelName, userId: user.id } }
     })
+  }
+
+  /** Only the channel's creator (immutable, set at creation) may change its topic. */
+  private handleSetChannelTopic(user: UserRecord, channelTopic: portochat.IChannelTopic): void {
+    const channelName = channelTopic.channel ?? ''
+    const record = this.channels.get(channelName)
+    if (!record) {
+      user.peer.send({
+        errorMessage: { errorType: ErrorType.ChannelDoesNotExist, additionalMessage: channelName }
+      })
+      return
+    }
+    if (record.creatorId !== user.id) {
+      user.peer.send({
+        errorMessage: { errorType: ErrorType.NotAuthorized, additionalMessage: channelName }
+      })
+      return
+    }
+
+    const topic = (channelTopic.topic ?? '').slice(0, MAX_CHANNEL_TOPIC_LENGTH)
+    this.channels.setTopic(channelName, topic)
+    this.broadcastToAll({ channelTopic: { channel: channelName, topic } })
   }
 
   // ---- Notification handling --------------------------------------------

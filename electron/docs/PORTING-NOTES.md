@@ -80,6 +80,16 @@ dropped, and the honest state of Java-interop testing.
   theme, React + CSS Modules. Feature-equivalent for channels, DMs, and
   join/part/list, but the visual design and window management model are
   entirely new rather than ported.
+- **Channel topics — a genuinely new feature, not a port of anything.** The
+  Java app has no concept of a channel topic/description at all. Added on
+  request: set only by a channel's creator (an id captured at creation and
+  otherwise unused anywhere else in this app — the Java version has no
+  concept of channel ownership either), shown as a subtitle under the
+  channel name in the sidebar (Discord-style) and as a pinned bar at the
+  top of the message pane (IRC-style). See `ChannelTopic` in PROTOCOL.md.
+  Backward compatible with old Java peers the same way every other
+  addition here is: a new, additively-numbered protobuf field/message that
+  proto3's unknown-field skipping lets old clients/servers ignore.
 
 ## What was deliberately dropped or scoped out
 

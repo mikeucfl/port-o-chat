@@ -43,6 +43,10 @@ message PortoChatMessage {
         UserList userList = 10;
         // New: keyshare delivery for E2E channels (wrapped symmetric key).
         KeyShare keyShare = 11;
+        // New: sets/announces a channel's topic. Sent by a client (only the
+        // channel's creator is authorized; the server enforces this) and
+        // echoed back by the server to everyone as the new-topic broadcast.
+        ChannelTopic channelTopic = 12;
     }
 }
 
@@ -75,6 +79,9 @@ message ErrorMessage {
         // unmodified Java client) tries to join a channel that was created
         // as end-to-end encrypted.
         E2EChannelRequiresSupport = 2;
+        // New: returned when a client tries an action reserved for a
+        // channel's creator (currently: setting the topic) and isn't one.
+        NotAuthorized = 3;
     }
     ErrorType errorType = 1;
     string additionalMessage = 2;
@@ -142,6 +149,9 @@ message ChannelAdded {
     string channel = 1;
     // New: true if this channel was created end-to-end encrypted.
     bool e2eChannel = 2;
+    // New: id of the user who created this channel — the only user ever
+    // authorized to set its topic.
+    string creatorId = 3;
 }
 message ChannelRemoved {
     string channel = 1;
@@ -188,6 +198,15 @@ message Pong {
 message ChannelMetadata {
     string channel = 1;
     bool e2eChannel = 2;
+    string creatorId = 3;
+    string topic = 4;
+}
+
+// Sets (client -> server, creator only) or announces (server -> everyone)
+// a channel's topic.
+message ChannelTopic {
+    string channel = 1;
+    string topic = 2;
 }
 
 // Delivers a channel's symmetric key, wrapped via ECDH+HKDF+AEAD to a single

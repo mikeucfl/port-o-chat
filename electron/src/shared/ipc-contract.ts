@@ -3,6 +3,7 @@ import type {
   ChannelDto,
   ChannelJoinPartEvent,
   ChannelKeyRotatedEvent,
+  ChannelTopicChangedEvent,
   ChatMessageDto,
   ConnectionStatusEvent,
   ErrorEvent,
@@ -36,6 +37,7 @@ export interface PortochatApi {
   partChannel(name: string): Promise<void>
   requestChannelList(): Promise<void>
   setNickname(name: string): Promise<void>
+  setChannelTopic(channel: string, topic: string): Promise<void>
 
   getFingerprint(userId: string): Promise<string | null>
   getMyFingerprint(): Promise<string | null>
@@ -48,6 +50,7 @@ export interface PortochatApi {
   onChannelAdded(cb: (c: ChannelDto) => void): () => void
   onChannelRemoved(cb: (name: string) => void): () => void
   onChannelJoinPart(cb: (e: ChannelJoinPartEvent) => void): () => void
+  onChannelTopicChanged(cb: (e: ChannelTopicChangedEvent) => void): () => void
   onUserList(cb: (users: UserDto[], channel?: string) => void): () => void
   onUserConnectionStatus(cb: (e: UserConnectionStatusEvent) => void): () => void
   onNameResult(cb: (e: NameResultEvent) => void): () => void
@@ -69,6 +72,7 @@ export const IPC_INVOKE = {
   partChannel: 'channel:part',
   requestChannelList: 'channel:listRequest',
   setNickname: 'user:setNickname',
+  setChannelTopic: 'channel:setTopic',
   getFingerprint: 'crypto:getFingerprint',
   getMyFingerprint: 'crypto:getMyFingerprint',
   trustPeerKey: 'crypto:trustPeerKey'
@@ -83,6 +87,7 @@ export const IPC_EVENT = {
   channelAdded: 'channel:added',
   channelRemoved: 'channel:removed',
   channelJoinPart: 'channel:joinPart',
+  channelTopicChanged: 'channel:topicChanged',
   userList: 'user:list',
   userConnectionStatus: 'user:connectionStatus',
   nameResult: 'user:nameResult',

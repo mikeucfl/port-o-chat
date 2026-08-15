@@ -5,6 +5,7 @@ import type {
   ChannelDto,
   ChannelJoinPartEvent,
   ChannelKeyRotatedEvent,
+  ChannelTopicChangedEvent,
   ChatMessageDto,
   ConnectionStatusEvent,
   ErrorEvent,
@@ -43,6 +44,8 @@ const api: PortochatApi = {
   partChannel: (name: string) => ipcRenderer.invoke(IPC_INVOKE.partChannel, name),
   requestChannelList: () => ipcRenderer.invoke(IPC_INVOKE.requestChannelList),
   setNickname: (name: string) => ipcRenderer.invoke(IPC_INVOKE.setNickname, name),
+  setChannelTopic: (channel: string, topic: string) =>
+    ipcRenderer.invoke(IPC_INVOKE.setChannelTopic, channel, topic),
 
   getFingerprint: (userId: string) => ipcRenderer.invoke(IPC_INVOKE.getFingerprint, userId),
   getMyFingerprint: () => ipcRenderer.invoke(IPC_INVOKE.getMyFingerprint),
@@ -57,6 +60,8 @@ const api: PortochatApi = {
   onChannelRemoved: (cb: (name: string) => void) => subscribe(IPC_EVENT.channelRemoved, cb),
   onChannelJoinPart: (cb: (e: ChannelJoinPartEvent) => void) =>
     subscribe(IPC_EVENT.channelJoinPart, cb),
+  onChannelTopicChanged: (cb: (e: ChannelTopicChangedEvent) => void) =>
+    subscribe(IPC_EVENT.channelTopicChanged, cb),
   onUserList: (cb: (users: UserDto[], channel?: string) => void) =>
     subscribe<[UserDto[], string | undefined]>(IPC_EVENT.userList, ([users, channel]) =>
       cb(users, channel)

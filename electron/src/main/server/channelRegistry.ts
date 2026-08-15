@@ -1,7 +1,9 @@
 export interface ChannelRecord {
   readonly name: string
   readonly e2e: boolean
+  readonly creatorId: string
   keyEpoch: number
+  topic: string
   /** User ids currently in the channel. */
   readonly members: Set<string>
 }
@@ -20,6 +22,8 @@ export type DepartureResult = 'channel-removed' | 'user-left' | 'not-a-member'
  * convention, same as the original app). Adds an `e2e`/`keyEpoch` pair the
  * Java version never had — the server tracks *that* a channel is end-to-end
  * encrypted for routing/refusal purposes, but never the key material itself.
+ * Also tracks `creatorId` (the only user ever authorized to set `topic`) and
+ * `topic` itself, neither of which existed in the Java version.
  */
 export class ChannelRegistry {
   private channels = new Map<string, ChannelRecord>()
@@ -34,14 +38,24 @@ export class ChannelRegistry {
 
   /**
    * Creates the channel if it doesn't exist yet (using `requestedE2E` for its
-   * immutable E2E flag). If it already exists, `requestedE2E` is ignored —
-   * the E2E flag can never change after creation.
+   * immutable E2E flag, and `creatorId` for its immutable creator). If it
+   * already exists, `requestedE2E`/`creatorId` are ignored — a channel's
+   * creator, like its E2E flag, can never change after creation. If the
+   * channel is later torn down (last member leaves) and recreated under the
+   * same name, it gets a fresh creator/flag/topic, same as today's e2e flag.
    */
-  ensureChannel(name: string, requestedE2E: boolean): EnsureChannelResult {
+  ensureChannel(name: string, requestedE2E: boolean, creatorId: string): EnsureChannelResult {
     const existing = this.channels.get(name)
     if (existing) return { record: existing, created: false }
 
-    const record: ChannelRecord = { name, e2e: requestedE2E, keyEpoch: 0, members: new Set() }
+    const record: ChannelRecord = {
+      name,
+      e2e: requestedE2E,
+      creatorId,
+      keyEpoch: 0,
+      topic: '',
+      members: new Set()
+    }
     this.channels.set(name, record)
     return { record, created: true }
   }
@@ -105,5 +119,13 @@ export class ChannelRegistry {
     if (!record) return undefined
     record.keyEpoch += 1
     return record.keyEpoch
+  }
+
+  /** Returns false if the channel doesn't exist. Caller (router.ts) is responsible for the creator-only authorization check. */
+  setTopic(name: string, topic: string): boolean {
+    const record = this.channels.get(name)
+    if (!record) return false
+    record.topic = topic
+    return true
   }
 }
