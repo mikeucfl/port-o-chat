@@ -1,5 +1,41 @@
-.layout {
+.page {
   height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.hostBanner {
+  flex-shrink: 0;
+  background: rgba(88, 101, 242, 0.12);
+  border-bottom: 1px solid var(--accent);
+  padding: 8px 20px;
+  font-size: 12px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hostBannerStrong {
+  font-weight: 700;
+}
+
+.hostBannerAddr {
+  font-family: ui-monospace, monospace;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.hostBannerHint {
+  color: var(--text-secondary);
+  margin-left: auto;
+}
+
+.layout {
+  flex: 1;
+  min-height: 0;
   display: grid;
   grid-template-columns: 240px 1fr 220px;
   grid-template-rows: 100%;

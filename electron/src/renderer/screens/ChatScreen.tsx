@@ -63,45 +63,77 @@ export function ChatScreen() {
     active?.type === 'dm' ? state.peerKeyWarnings[active.userId] : undefined
 
   return (
-    <div className={styles.layout}>
-      <Sidebar onOpenFingerprint={(userId, isSelf) => setFingerprintTarget({ userId, isSelf })} />
+    <div className={styles.page}>
+      {state.hostInfo && (
+        <div className={styles.hostBanner}>
+          <span className={styles.hostBannerStrong}>Hosting</span>
+          <span>on port</span>
+          <span className={styles.hostBannerAddr}>{state.hostInfo.port}</span>
+          {state.hostInfo.lanAddresses.length > 0 ? (
+            <>
+              <span>— reachable on your LAN at</span>
+              {state.hostInfo.lanAddresses.map((addr) => (
+                <span className={styles.hostBannerAddr} key={addr}>
+                  {addr}:{state.hostInfo?.port}
+                </span>
+              ))}
+            </>
+          ) : (
+            <span>— no LAN network interface detected</span>
+          )}
+          <span className={styles.hostBannerHint}>
+            LAN only — reaching this from the internet requires port forwarding, which
+            Port-O-Chat does not set up for you.
+          </span>
+        </div>
+      )}
+      <div className={styles.layout}>
+        <Sidebar onOpenFingerprint={(userId, isSelf) => setFingerprintTarget({ userId, isSelf })} />
 
-      <div className={styles.mainColumn}>
-        {active && title ? (
-          <>
-            <div className={styles.header}>
-              <span className={styles.headerTitle}>
-                {active.type === 'channel' ? title : `@${title}`}
-              </span>
-              <div className={styles.headerSpacer} />
-              <EncryptionBadge encrypted={encrypted} />
-            </div>
-            {dmWarning && (
-              <KeyChangeWarningBanner
-                userName={title}
-                onViewFingerprint={() => setFingerprintTarget({ userId: active.type === 'dm' ? active.userId : '', isSelf: false })}
+        <div className={styles.mainColumn}>
+          {active && title ? (
+            <>
+              <div className={styles.header}>
+                <span className={styles.headerTitle}>
+                  {active.type === 'channel' ? title : `@${title}`}
+                </span>
+                <div className={styles.headerSpacer} />
+                <EncryptionBadge encrypted={encrypted} />
+              </div>
+              {dmWarning && (
+                <KeyChangeWarningBanner
+                  userName={title}
+                  onViewFingerprint={() =>
+                    setFingerprintTarget({
+                      userId: active.type === 'dm' ? active.userId : '',
+                      isSelf: false
+                    })
+                  }
+                />
+              )}
+              <MessageList messages={messages} users={state.users} myUserId={state.myUserId} />
+              <Composer
+                target={active}
+                placeholder={active.type === 'channel' ? `Message ${title}` : `Message @${title}`}
               />
-            )}
-            <MessageList messages={messages} users={state.users} myUserId={state.myUserId} />
-            <Composer
-              target={active}
-              placeholder={active.type === 'channel' ? `Message ${title}` : `Message @${title}`}
-            />
-          </>
-        ) : (
-          <div className={styles.emptyState}>
-            <div>👋 Pick a channel or a direct message to get started.</div>
-          </div>
+            </>
+          ) : (
+            <div className={styles.emptyState}>
+              <div>👋 Pick a channel or a direct message to get started.</div>
+            </div>
+          )}
+        </div>
+
+        {active && (
+          <MemberList
+            members={members}
+            peerKeyWarnings={state.peerKeyWarnings}
+            onOpenFingerprint={(userId) =>
+              setFingerprintTarget({ userId, isSelf: userId === state.myUserId })
+            }
+          />
         )}
       </div>
-
-      {active && (
-        <MemberList
-          members={members}
-          peerKeyWarnings={state.peerKeyWarnings}
-          onOpenFingerprint={(userId) => setFingerprintTarget({ userId, isSelf: userId === state.myUserId })}
-        />
-      )}
 
       {fingerprintTarget && (
         <FingerprintDialog
