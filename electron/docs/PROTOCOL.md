@@ -37,14 +37,28 @@ protobuf decoder — any mismatch, unknown `msgType`, or unsupported
 `encryptionFlag` closes the connection rather than attempting to recover
 (TCP byte streams can't be reliably resynchronized after corruption).
 
-### Encryption flag (legacy) — not implemented here
+### Encryption flag (legacy) — not implemented here, but acknowledged
 
 The Java app's `encryptionFlag` byte toggles a hand-rolled RSA+AES transport
 encryption scheme (`SetUserPublicKey` / `SetServerSharedKey` request types,
-below). This app **never sends or responds to those requests** and always
-writes `encryptionFlag = 0`. See [PORTING-NOTES.md](PORTING-NOTES.md) for why,
-and [CRYPTO.md](CRYPTO.md) for what replaces it. Framing and every other
-message stay fully compatible with the Java app regardless.
+below). This app **never sends `SetUserPublicKey`** and **always writes
+`encryptionFlag = 0`** — it never actually implements that encryption scheme.
+See [CRYPTO.md](CRYPTO.md) for what replaces it.
+
+However, this server **does reply** to a `SetUserPublicKey` request it
+receives (e.g. from a real Java client) with a `SetServerSharedKey` — this
+turned out to be load-bearing, not optional: the Java client's own
+`sendUsername()` call only fires as a side effect of processing that reply
+(see `ServerConnection.java`'s `setServerSecretKey()`), regardless of
+whether the key inside it actually decodes. Without a reply, a real Java
+client connects at the TCP level but never registers a username at all —
+confirmed by running the actual Java client against this server. The
+`byteData` sent back is deliberately the wrong length for any real RSA
+modulus, so it's guaranteed to fail to decrypt on the Java side — this
+unblocks the username handshake while guaranteeing the Java client's own
+`isEncryptionEnabled()` check stays false, so it keeps sending
+`encryptionFlag = 0` (the only mode this server's codec accepts). See
+`server/router.ts`'s `handleLegacySetUserPublicKey` for the exact reasoning.
 
 ## Message types
 
@@ -107,9 +121,9 @@ Carries both channel messages and DMs.
 | `ChannelList` | 0 | C→S | Inherited |
 | `ChannelUserList` | 1 | C→S | Inherited; `stringRequestData` = channel name |
 | `ChannelJoin` | 2 | C→S | Inherited; `stringRequestData` = channel name |
-| `SetServerSharedKey` | 3 | S→C | Legacy transport handshake — **never sent by this app's server** |
+| `SetServerSharedKey` | 3 | S→C | Legacy transport handshake. This app's client never sends `SetUserPublicKey` so never receives one for real, but this app's **server does send one** in reply to a `SetUserPublicKey` it receives — with a deliberately-undecryptable `byteData` — purely to unblock the Java client's `sendUsername()` call, which is otherwise gated behind it. See the framing section above. |
 | `SetUserName` | 4 | C→S | Inherited; `stringRequestData` = requested name |
-| `SetUserPublicKey` | 5 | C→S | Legacy transport handshake — **this app's server silently no-ops it** rather than replying, so an old Java client's own plaintext fallback kicks in |
+| `SetUserPublicKey` | 5 | C→S | Legacy transport handshake — this app's client never sends it. This app's **server replies** to it (see above) rather than ignoring it. |
 | `UserList` | 6 | C→S | Inherited |
 | `SetE2EPublicKey` | 7 | C→S | **(new)** `byteData` = raw 32-byte X25519 identity public key. Sent once, immediately after connecting, before `SetUserName`. |
 

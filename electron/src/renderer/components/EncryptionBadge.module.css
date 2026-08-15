@@ -18,3 +18,13 @@
   background: rgba(128, 132, 142, 0.15);
   color: var(--text-muted);
 }
+
+.pending {
+  background: rgba(128, 132, 142, 0.15);
+  color: var(--text-secondary);
+}
+
+.warning {
+  background: rgba(240, 178, 50, 0.15);
+  color: var(--warning);
+}

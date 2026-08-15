@@ -257,7 +257,13 @@ describe('ChatRouter', () => {
     expect(notFound?.notification?.userDoesNotExist?.user).toBeUndefined()
   })
 
-  it('never sends an unsolicited UserList after a legacy key-exchange request (bug-fix regression)', () => {
+  it('replies to a legacy SetUserPublicKey with an undecryptable SetServerSharedKey, never a UserList (bug-fix regression)', () => {
+    // The original Java bug fell through into an unsolicited UserList send.
+    // This server intentionally does reply now (see router.ts's
+    // handleLegacySetUserPublicKey) — but only to unblock the Java client's
+    // own sendUsername() call, never with a UserList, and never with key
+    // material that could actually decrypt (which would flip the Java
+    // client into sending flag=1 frames this server can't accept).
     const alice = connectAndName('alice')
     alice.peer.sent.length = 0
 
@@ -266,7 +272,10 @@ describe('ChatRouter', () => {
       msg({ request: { requestType: RequestType.SetUserPublicKey, byteData: Buffer.alloc(4) } })
     )
 
-    expect(alice.peer.sent).toHaveLength(0)
+    expect(alice.peer.sent).toHaveLength(1)
+    const reply = alice.peer.sent[0]
+    expect(reply?.request?.requestType).toBe(RequestType.SetServerSharedKey)
+    expect(reply?.userList).toBeUndefined()
   })
 
   it('overrides a spoofed senderId with the authenticated sender (hardening)', () => {

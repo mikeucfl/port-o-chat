@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import {
   MAX_CHANNEL_NAME_LENGTH,
   MAX_E2E_CIPHERTEXT_LENGTH,
@@ -127,10 +128,11 @@ export class ChatRouter {
         this.sendUserList(user)
         break
       case RequestType.SetUserPublicKey:
+        this.handleLegacySetUserPublicKey(user)
+        break
       case RequestType.SetServerSharedKey:
-        // Legacy Java transport-encryption handshake. Deliberately not
-        // implemented (see PORTING-NOTES.md) — no-op rather than replying,
-        // so an old Java client's own fallback (stay plaintext) kicks in.
+        // Only ever sent server-to-client in the legacy protocol; a client
+        // should never send us this. Ignore defensively.
         break
       default:
         break
@@ -193,6 +195,36 @@ export class ChatRouter {
   private handleSetE2EPublicKey(user: UserRecord, keyBytes: Uint8Array | undefined | null): void {
     if (!keyBytes || keyBytes.length === 0) return
     user.e2eIdentityKey = Buffer.from(keyBytes)
+  }
+
+  /**
+   * The legacy Java client's SetUserName call is NOT independent of this
+   * handshake — it only fires as a side effect of ClientHandler receiving
+   * SetServerSharedKey (see ServerConnection.java's setServerSecretKey()),
+   * unconditionally, regardless of whether the RSA-encrypted key it
+   * contains actually decodes. Confirmed by running the real Java client
+   * against this server: without any reply here, it never sends a
+   * username at all and its own GUI sits stuck at "connecting" forever.
+   *
+   * This server still does not implement the actual legacy AES/RSA
+   * transport encryption (see PORTING-NOTES.md/CRYPTO.md) — the byteData
+   * below is deliberately the wrong length for any real RSA modulus, so
+   * Cipher.doFinal() on the Java side throws IllegalBlockSizeException
+   * before attempting real decryption, `serverSecretKey` stays null, and
+   * the Java client's own isEncryptionEnabled() check stays false — it
+   * keeps sending flag=0 plaintext, which is the only mode this server's
+   * codec accepts. This reply's only purpose is unblocking sendUsername();
+   * it deliberately can never result in the Java client switching to
+   * flag=1 encrypted frames.
+   */
+  private handleLegacySetUserPublicKey(user: UserRecord): void {
+    user.peer.send({
+      request: {
+        requestId: randomUUID(),
+        requestType: portochat.Request.RequestType.SetServerSharedKey,
+        byteData: new Uint8Array(1)
+      }
+    })
   }
 
   private handleChannelJoin(user: UserRecord, request: portochat.IRequest): void {

@@ -43,12 +43,6 @@ export function ChatScreen() {
       : (state.users[active.userId]?.name ?? 'Unknown user')
     : null
 
-  const encrypted = useMemo(() => {
-    if (!active) return false
-    if (active.type === 'channel') return state.channels[active.name]?.e2e ?? false
-    return state.users[active.userId]?.e2eCapable ?? false
-  }, [active, state.channels, state.users])
-
   const members = useMemo(() => {
     if (!active) return []
     if (active.type === 'channel') {
@@ -61,6 +55,25 @@ export function ChatScreen() {
 
   const dmWarning =
     active?.type === 'dm' ? state.peerKeyWarnings[active.userId] : undefined
+
+  // Reflects whether E2E is actually healthy right now for the active
+  // conversation, not just whether it's flagged as E2E: a channel whose key
+  // hasn't arrived yet, or any participant whose key changed and hasn't
+  // been re-verified, shows as pending/unverified rather than a flat
+  // "Encrypted" that would overstate the current state of things.
+  const encryptionStatus = useMemo((): 'plain' | 'encrypted' | 'pending' | 'warning' => {
+    if (!active) return 'plain'
+    if (active.type === 'dm') {
+      if (!state.users[active.userId]?.e2eCapable) return 'plain'
+      if (dmWarning) return 'warning'
+      return 'encrypted'
+    }
+    const channel = state.channels[active.name]
+    if (!channel?.e2e) return 'plain'
+    if (members.some((m) => state.peerKeyWarnings[m.id])) return 'warning'
+    if (state.channelKeyEpochs[active.name] === undefined) return 'pending'
+    return 'encrypted'
+  }, [active, state.channels, state.users, state.peerKeyWarnings, state.channelKeyEpochs, members, dmWarning])
 
   return (
     <div className={styles.page}>
@@ -98,7 +111,7 @@ export function ChatScreen() {
                   {active.type === 'channel' ? title : `@${title}`}
                 </span>
                 <div className={styles.headerSpacer} />
-                <EncryptionBadge encrypted={encrypted} />
+                <EncryptionBadge status={encryptionStatus} />
                 {active.type === 'channel' && (
                   <button
                     className={styles.leaveButton}

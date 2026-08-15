@@ -84,14 +84,33 @@ dropped, and the honest state of Java-interop testing.
 ## What was deliberately dropped or scoped out
 
 - **The Java app's RSA+AES transport encryption** (`SetUserPublicKey` /
-  `SetServerSharedKey`) is not reimplemented. It's unauthenticated (the
+  `SetServerSharedKey`) is not reimplemented — it's unauthenticated (the
   server can substitute keys undetected) and E2E fully supersedes its
-  purpose for this app's own traffic. This app's server silently ignores a
-  `SetUserPublicKey` request rather than replying, and this app's client
-  never sends one — so a connection between this app and an unmodified Java
-  peer simply runs in that peer's own plaintext fallback mode the whole
-  time. Framing and every other message stay fully interoperable either
-  way; only that specific transport-encryption layer doesn't cross
+  purpose for this app's own traffic. This app's client never sends
+  `SetUserPublicKey`, and this app's server never actually implements the
+  AES/RSA scheme itself.
+
+  This was initially designed as a straight no-op on the server side (just
+  ignore `SetUserPublicKey`), on the assumption that an old Java client
+  would independently fall back to plaintext. **Running the actual Java
+  client against this server during development showed that assumption was
+  wrong**: the Java client's `sendUsername()` call is not independent of
+  this handshake — it only fires as a side effect of processing a
+  `SetServerSharedKey` reply (see `ServerConnection.java`), regardless of
+  whether the key inside it decodes. With a plain no-op, a real Java client
+  connects at the TCP level but never registers a username at all, and its
+  own GUI sits stuck at "connecting" forever.
+
+  The fix: this server **does** reply to `SetUserPublicKey`, with a
+  `SetServerSharedKey` whose `byteData` is deliberately the wrong length
+  for any real RSA modulus — guaranteed to fail to decrypt on the Java
+  side (confirmed: throws `BadPaddingException`, caught internally,
+  `serverSecretKey` stays null), which unblocks `sendUsername()` while
+  guaranteeing the Java client's `isEncryptionEnabled()` check stays false
+  and it keeps sending `encryptionFlag = 0` — the only mode this server's
+  codec accepts. See `server/router.ts`'s `handleLegacySetUserPublicKey`.
+  Framing and every other message stay fully interoperable either way;
+  only the actual AES/RSA transport-encryption layer doesn't cross
   implementations. See [CRYPTO.md](CRYPTO.md) for what replaces it for
   this app's own traffic.
 - **Message history / replay on join.** Matches the original (the Java app
@@ -135,31 +154,45 @@ dropped, and the honest state of Java-interop testing.
 
 ## Java interop — honest status
 
-Real cross-implementation testing (this app against an actual running Java
-client or server) **was not possible to complete in this development
-environment**: `build.gradle` pins `sourceCompatibility`/
-`targetCompatibility` to Java 17, and only a JDK 8 installation
-(`AdoptOpenJDK 1.8.0_242`) was found on this machine, with no `JAVA_HOME`
-set and no JDK 17 toolchain available. Running `./gradlew build` here fails
-immediately with `invalid source release: 17` — the Java side of this repo
-could not actually be compiled or run to verify against.
+Real cross-implementation testing **was performed**, though it took an
+extra step to get there: `build.gradle` pins `sourceCompatibility`/
+`targetCompatibility` to Java 17, and only a JDK 8 installation was
+initially found on this development machine — `./gradlew build` failed
+immediately with `invalid source release: 17`. A JDK 17 (Eclipse Temurin)
+was installed specifically to unblock this, after which the Java project
+built and ran cleanly.
 
-Confidence in wire compatibility instead rests on:
-- Byte-level unit tests of the framing/codec layer against the exact
-  formula derived by reading `ConnectionHandler.java`, `DefaultData.java`,
-  and `ProtoMessage.java` directly (see `net/framing.test.ts`,
-  `net/codec.test.ts`).
-- A forward-compatibility test asserting that messages containing the new
-  E2E-only fields still encode/decode cleanly (protobuf3's unknown-field
-  skipping is exactly what old Java peers would rely on).
-- Careful reuse of the original `.proto` file's exact field numbers/types
-  for everything inherited, with only additive changes.
+With a real JDK 17 available, two live cross-implementation checks were
+run (see `electron/scripts/verify-java-interop.ts` and
+`tools/JavaInteropTester.java`, both kept in the repo so you can re-run
+these yourself):
 
-If you have a working JDK 17 available, running the original Java server
-(`./gradlew runServer`) against this app's JOIN mode — and this app's HOST
-mode against the original Java client — would be the natural next
-verification step; this was not something the developer of this port could
-personally exercise.
+1. **This app's client against the real Java server** (`./gradlew runServer`):
+   connected, set a username, joined a channel, sent a channel message, and
+   requested the channel list — all correctly round-tripped over a real
+   socket to the unmodified Java server.
+2. **The real Java client's own networking code** (`ServerConnection`/
+   `ServerDataListener` — the same classes the Swing GUI uses, exercised
+   headlessly to avoid popping a GUI window from an automated script)
+   **against this app's server**: same sequence, same result. This is what
+   actually caught the legacy-handshake gap described above — the first
+   run showed a real, working Java client silently failing to ever
+   register a username against this server, which no unit test could have
+   caught since it depends on the real Java client's exact internal call
+   sequence, not just the wire format. After the fix, a second run
+   confirmed `handleServerConnection(username, success=true)` fires
+   correctly (the callback that flips the Java Swing client's own UI to
+   "connected").
+
+**What this does *not* cover**: the real Java Swing GUI client was
+deliberately never launched from this automated environment (only its
+underlying networking classes, headlessly) — clicking through the actual
+Java UI, and a live session with both a real Java client and this app's
+GUI open side by side, are still worth doing by hand if you want that last
+mile of confidence. Confidence otherwise also rests on byte-level unit
+tests of the framing/codec layer (`net/framing.test.ts`, `net/codec.test.ts`)
+and a forward-compatibility test asserting messages with the new E2E-only
+fields still decode cleanly under protobuf3's unknown-field skipping.
 
 ## Verification performed
 
