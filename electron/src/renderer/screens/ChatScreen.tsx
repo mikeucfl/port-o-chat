@@ -7,6 +7,7 @@ import { KeyChangeWarningBanner } from '../components/KeyChangeWarningBanner'
 import { MemberList } from '../components/MemberList'
 import { MessageList } from '../components/MessageList'
 import { Sidebar } from '../components/Sidebar'
+import { VerifyNudgeBanner } from '../components/VerifyNudgeBanner'
 import { useStore } from '../state/store'
 import { conversationKey } from '../state/types'
 import styles from './ChatScreen.module.css'
@@ -17,6 +18,16 @@ export function ChatScreen() {
     null
   )
   const [toast, setToast] = useState<string | null>(null)
+  // Session-only (never persisted, matching the app's zero-persistence
+  // stance): which peers we've already nudged to verify their safety
+  // number, so the prompt shows once per DM per session rather than every
+  // time the conversation is reopened.
+  const [nudgedUsers, setNudgedUsers] = useState<Set<string>>(new Set())
+
+  function openFingerprint(userId: string, isSelf: boolean): void {
+    setNudgedUsers((prev) => (prev.has(userId) ? prev : new Set(prev).add(userId)))
+    setFingerprintTarget({ userId, isSelf })
+  }
 
   useEffect(() => {
     if (!state.generalError) return
@@ -102,7 +113,7 @@ export function ChatScreen() {
         </div>
       )}
       <div className={styles.layout}>
-        <Sidebar onOpenFingerprint={(userId, isSelf) => setFingerprintTarget({ userId, isSelf })} />
+        <Sidebar onOpenFingerprint={openFingerprint} />
 
         <div className={styles.mainColumn}>
           {active && title ? (
@@ -134,16 +145,25 @@ export function ChatScreen() {
                   }
                 />
               )}
-              {dmWarning && (
+              {dmWarning ? (
                 <KeyChangeWarningBanner
                   userName={title}
                   onViewFingerprint={() =>
-                    setFingerprintTarget({
-                      userId: active.type === 'dm' ? active.userId : '',
-                      isSelf: false
-                    })
+                    openFingerprint(active.type === 'dm' ? active.userId : '', false)
                   }
                 />
+              ) : (
+                active.type === 'dm' &&
+                encryptionStatus === 'encrypted' &&
+                !nudgedUsers.has(active.userId) && (
+                  <VerifyNudgeBanner
+                    userName={title}
+                    onViewFingerprint={() => openFingerprint(active.userId, false)}
+                    onDismiss={() =>
+                      setNudgedUsers((prev) => new Set(prev).add(active.userId))
+                    }
+                  />
+                )
               )}
               <MessageList messages={messages} users={state.users} myUserId={state.myUserId} />
               <Composer
@@ -162,9 +182,7 @@ export function ChatScreen() {
           <MemberList
             members={members}
             peerKeyWarnings={state.peerKeyWarnings}
-            onOpenFingerprint={(userId) =>
-              setFingerprintTarget({ userId, isSelf: userId === state.myUserId })
-            }
+            onOpenFingerprint={(userId) => openFingerprint(userId, userId === state.myUserId)}
           />
         )}
       </div>
