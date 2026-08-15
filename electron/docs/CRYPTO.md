@@ -147,10 +147,9 @@ plaintext/ciphertext is ever written to disk, logged, or included in a
 crash dump by this app — see the README's no-persistence guarantee for the
 narrow, explicit exception (window size, last nickname, last host/port).
 
-This extends to native OS notifications: Windows Action Center and macOS
-Notification Center both retain their own history of recent notifications,
-outside this app's control. A notification for an E2E message therefore
-never includes the actual message text — only "Sent an encrypted message"
-— so encrypted content can't end up sitting in the OS's own notification
-log. Plaintext (non-E2E) conversations don't get this treatment, since
-there's no confidentiality expectation for them in the first place.
+This is also why the app deliberately has no popup/toast OS notifications
+for new messages (only a passive numeric unread badge on the taskbar/dock
+icon, which reveals a count and nothing else) — Windows Action Center and
+macOS Notification Center both retain their own history of any
+notification shown, outside this app's control, which would otherwise be
+an uncontrolled second place message content could end up living.

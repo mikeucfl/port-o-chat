@@ -9,8 +9,9 @@ const controller = new SessionController()
 
 const isDev = !app.isPackaged
 
-// Windows shows toast notifications under whatever AppUserModelId a process
-// registers — without this they'd be attributed to "Electron" generically.
+// Windows groups/identifies taskbar entries (and the overlay unread badge —
+// see SessionController.setUnreadBadge) under whatever AppUserModelId a
+// process registers — without this it'd show up as generic "Electron".
 // Matches electron-builder.yml's appId.
 if (process.platform === 'win32') {
   app.setAppUserModelId('com.lttldrgn.portochat')
@@ -39,12 +40,6 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
-  })
-
-  // Cancel the taskbar attention-flash (see SessionController.flashWindow)
-  // once the user actually comes back to the app.
-  mainWindow.on('focus', () => {
-    mainWindow?.flashFrame(false)
   })
 
   let resizeSaveTimer: ReturnType<typeof setTimeout> | null = null

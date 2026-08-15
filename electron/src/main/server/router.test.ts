@@ -58,6 +58,23 @@ describe('ChatRouter', () => {
     expect(statusMsg?.notification?.userConnectionStatus?.connected).toBe(true)
   })
 
+  it('propagates a rename to already-connected users too, not just the initial name-set (bug-fix regression)', () => {
+    const alice = connectAndName('alice')
+    const bob = connectAndName('bob')
+    alice.peer.sent.length = 0
+
+    router.handleMessage(
+      bob.peer,
+      msg({ request: { requestType: RequestType.SetUserName, stringRequestData: { value: 'bobby' } } })
+    )
+
+    expect(bob.peer.last()?.notification?.userNameSet?.name).toBe('bobby')
+    const statusMsg = alice.peer.sent.find(
+      (m) => m.notification?.userConnectionStatus?.user?.id === bob.user.id
+    )
+    expect(statusMsg?.notification?.userConnectionStatus?.user?.name).toBe('bobby')
+  })
+
   it('rejects a duplicate username with UserNameInUse and does not broadcast', () => {
     connectAndName('alice')
     const bobPeer = new FakePeer()

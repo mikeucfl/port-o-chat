@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import authStyles from '../screens/AuthLayout.module.css'
 import { Modal } from './Modal'
 
@@ -10,7 +11,7 @@ export function ConfirmDialog({
   onClose
 }: {
   title: string
-  message: string
+  message: ReactNode
   confirmLabel?: string
   danger?: boolean
   onConfirm: () => void

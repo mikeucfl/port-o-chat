@@ -43,12 +43,10 @@ export interface PortochatApi {
   getMyFingerprint(): Promise<string | null>
   trustPeerKey(userId: string): Promise<void>
 
-  /** Native OS window flash (taskbar/dock attention), for a message arriving while the window is unfocused. */
-  flashWindow(): Promise<void>
-  /** Brings the app window to the foreground — used when the user clicks a native notification. */
-  focusWindow(): Promise<void>
   /** Sets the OS taskbar/dock unread badge (macOS/Linux: numeric count; Windows: a plain overlay dot, see main/badgeIcon.ts). */
   setUnreadBadge(count: number): Promise<void>
+  /** Opens an http(s) URL in the user's default browser, after the renderer has already shown its own "open this link?" confirmation. */
+  openExternalLink(url: string): Promise<void>
 
   onConnectionStatus(cb: (e: ConnectionStatusEvent) => void): () => void
   onIdentity(cb: (e: IdentityEvent) => void): () => void
@@ -83,9 +81,8 @@ export const IPC_INVOKE = {
   getFingerprint: 'crypto:getFingerprint',
   getMyFingerprint: 'crypto:getMyFingerprint',
   trustPeerKey: 'crypto:trustPeerKey',
-  flashWindow: 'app:flashWindow',
-  focusWindow: 'app:focusWindow',
-  setUnreadBadge: 'app:setUnreadBadge'
+  setUnreadBadge: 'app:setUnreadBadge',
+  openExternalLink: 'app:openExternalLink'
 } as const
 
 /** IPC event (main -> renderer) channel names. */

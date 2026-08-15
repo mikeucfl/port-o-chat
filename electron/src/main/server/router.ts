@@ -184,7 +184,6 @@ export class ChatRouter {
       return
     }
 
-    const wasRename = user.name !== null
     const success = this.users.setName(user, newName)
 
     if (!success) {
@@ -195,9 +194,15 @@ export class ChatRouter {
     }
 
     this.users.touchLastSeen(user)
-    if (!wasRename) {
-      this.broadcastToAll(userConnectionStatus(user, true))
-    }
+    // Broadcast on both the initial name-set AND a later rename — the
+    // original Java server only ever did this for the initial set (a
+    // rename only updated its own internal object references), so already-
+    // connected clients' own contact lists would silently keep showing the
+    // stale name until they reconnected. UserConnectionStatus{connected:true}
+    // is reused rather than adding a new message type, since it's already
+    // just "here is this user's current UserData" and every client already
+    // handles it as an upsert keyed by user id.
+    this.broadcastToAll(userConnectionStatus(user, true))
     user.peer.send({ notification: { userNameSet: { name: newName } } })
   }
 

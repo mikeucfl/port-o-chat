@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { app, BrowserWindow, ipcMain, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeImage, shell } from 'electron'
 import { IPC_INVOKE, IPC_EVENT } from '@shared/ipc-contract'
 import type {
   AppConfig,
@@ -312,15 +312,16 @@ export class SessionController {
 
   // ---- window/OS integration ------------------------------------------------
 
-  flashWindow(): void {
-    this.window?.flashFrame(true)
-  }
-
-  focusWindow(): void {
-    if (!this.window || this.window.isDestroyed()) return
-    if (this.window.isMinimized()) this.window.restore()
-    this.window.show()
-    this.window.focus()
+  openExternalLink(url: string): void {
+    // The renderer has already shown its own "open this link?" confirmation
+    // before ever calling this — this is just the mechanism, not the
+    // decision. Still validated here regardless, since this is the one
+    // deliberate escape hatch in an otherwise fully locked-down renderer
+    // (see main/index.ts's setWindowOpenHandler/will-navigate): only
+    // http(s), never file:/javascript:/anything else a malicious peer
+    // could try to smuggle into a message as a "link."
+    if (!/^https?:\/\//i.test(url)) return
+    void shell.openExternal(url)
   }
 
   setUnreadBadge(count: number): void {
@@ -651,7 +652,6 @@ export function registerIpcHandlers(controller: SessionController): void {
   ipcMain.handle(IPC_INVOKE.getMyFingerprint, () => controller.getMyFingerprint())
   ipcMain.handle(IPC_INVOKE.trustPeerKey, (_e, userId: string) => controller.trustPeerKey(userId))
 
-  ipcMain.handle(IPC_INVOKE.flashWindow, () => controller.flashWindow())
-  ipcMain.handle(IPC_INVOKE.focusWindow, () => controller.focusWindow())
   ipcMain.handle(IPC_INVOKE.setUnreadBadge, (_e, count: number) => controller.setUnreadBadge(count))
+  ipcMain.handle(IPC_INVOKE.openExternalLink, (_e, url: string) => controller.openExternalLink(url))
 }

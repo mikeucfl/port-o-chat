@@ -51,9 +51,8 @@ const api: PortochatApi = {
   getMyFingerprint: () => ipcRenderer.invoke(IPC_INVOKE.getMyFingerprint),
   trustPeerKey: (userId: string) => ipcRenderer.invoke(IPC_INVOKE.trustPeerKey, userId),
 
-  flashWindow: () => ipcRenderer.invoke(IPC_INVOKE.flashWindow),
-  focusWindow: () => ipcRenderer.invoke(IPC_INVOKE.focusWindow),
   setUnreadBadge: (count: number) => ipcRenderer.invoke(IPC_INVOKE.setUnreadBadge, count),
+  openExternalLink: (url: string) => ipcRenderer.invoke(IPC_INVOKE.openExternalLink, url),
 
   onConnectionStatus: (cb: (e: ConnectionStatusEvent) => void) =>
     subscribe(IPC_EVENT.connectionStatus, cb),

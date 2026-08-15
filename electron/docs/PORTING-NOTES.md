@@ -90,34 +90,60 @@ dropped, and the honest state of Java-interop testing.
   Backward compatible with old Java peers the same way every other
   addition here is: a new, additively-numbered protobuf field/message that
   proto3's unknown-field skipping lets old clients/servers ignore.
-- **Unread tracking, notifications, and message-list polish — new,
-  UI-only, no wire-protocol changes involved.** The Java client had one
-  crude piece of this (`NotificationTimerListener`: flashed the taskbar
-  and changed the window title when unfocused, using `toFront()` to force
-  focus on Windows — arguably bad UX by modern standards). This app
-  replaces that with: a native OS notification per unread message (never
-  containing real content for an E2E conversation — see CRYPTO.md's Zero
-  persistence section), a non-focus-stealing taskbar/dock flash
-  (`BrowserWindow.flashFrame`) instead of forcing focus, and an OS
-  taskbar/dock unread badge (`app.setBadgeCount` on macOS/Linux; a
-  hand-drawn small overlay dot via a from-scratch PNG encoder on Windows,
-  since Windows has no equivalent count-badge API and pulling in an image
-  library for one small dot felt unwarranted — see
-  `src/main/util/badgeIcon.ts`). Also new, and not present in the Java
-  client at all: consecutive same-sender messages now visually group
+- **Unread tracking and message-list polish — new, UI-only, no
+  wire-protocol changes involved.** The Java client had one crude piece of
+  this (`NotificationTimerListener`: flashed the taskbar and changed the
+  window title when unfocused, using `toFront()` to force focus on Windows
+  — arguably bad UX by modern standards). This app deliberately does
+  **not** replace that with popup/toast OS notifications or a taskbar
+  flash — an early version did both, but per explicit feedback only a
+  passive OS taskbar/dock **unread count badge** was wanted, nothing that
+  interrupts (`app.setBadgeCount` on macOS/Linux; since Windows has no
+  equivalent count-badge API, a hand-drawn small overlay dot via a
+  from-scratch PNG encoder rather than pulling in an image library for one
+  dot — see `src/main/util/badgeIcon.ts`). Also new, and not present in the
+  Java client at all: consecutive same-sender messages now visually group
   (Discord-style, hover to see the timestamp of a grouped message), each
   user gets a deterministic avatar color instead of one flat accent color
   for everyone, and the composer is a real multi-line `<textarea>`
   (Shift+Enter for a newline) — the original single-line `<input>`
-  literally could not hold a newline at all.
-- **Clickable links — restored, not new.** The Java client auto-linked
-  `http(s)://`/`www.` text (`ChatPane.convertLinks`); this port's
-  MessageList originally just rendered plain text, which was a real
-  regression from the original, now fixed (`utils/linkify.tsx`). Reuses
-  `main/index.ts`'s existing `will-navigate` handler (there specifically
-  to keep the renderer from ever navigating anywhere on its own) to open
-  the link in the OS default browser, rather than adding a second,
-  separate "open a link" code path.
+  literally could not hold a newline at all. (A first pass at the
+  multi-line composer only fixed *entering* a newline; the message list's
+  CSS still collapsed it back onto one line on display, since HTML's
+  default `white-space: normal` treats a literal `\n` as just another
+  collapsible space — fixed with `white-space: pre-wrap`.)
+- **Clickable links — restored, not new, with an explicit confirmation
+  step.** The Java client auto-linked `http(s)://`/`www.` text
+  (`ChatPane.convertLinks`) and opened them immediately on click; this
+  port's MessageList originally just rendered plain text (a real
+  regression from the original), then a first fix auto-opened links
+  immediately like Java did. Per explicit feedback, clicking a link now
+  shows an in-app confirmation naming the exact URL before anything opens
+  (`ConfirmDialog`, reusing the same component the disconnect confirmation
+  uses) — since a link's *display* text and its real `href` target are
+  never guaranteed to match for text a peer sent. Only on confirmation does
+  the renderer call `openExternalLink` (`shell.openExternal`, http(s) only)
+  over IPC. `main/index.ts`'s existing `will-navigate` handler remains in
+  place as a defense-in-depth fallback for any other stray navigation, but
+  is no longer the primary path for message links specifically.
+- **Renaming didn't propagate to other already-connected clients — a real
+  bug, not a Java-parity choice.** The original Java server only ever
+  broadcast `UserConnectionStatus` on a user's *initial* name-set; a later
+  rename just updated the server's own internal object references and
+  never told anyone else, so every other client's contact list silently
+  kept showing the old name. Fixed here: `handleSetUserName` broadcasts on
+  every successful name change now, reusing the same message type (every
+  client already treats it as an upsert-by-id, so no new protocol
+  field/message was needed). **Caveat, confirmed by reading the Java source
+  directly rather than assumed:** an unmodified Java client still won't
+  pick this up for a user it already has cached, because its own
+  `ServerDataStorage.addUser` uses `ConcurrentHashMap.putIfAbsent` for both
+  its lookup maps — it silently keeps the *first* name it ever saw for a
+  given user id and ignores every update after that, including a fresh
+  `UserList` response. That's a pre-existing bug in the unmodified Java
+  client, out of scope to fix (Java source stays untouched) — two instances
+  of this Electron app correctly see each other's renames live; a real Java
+  client in the mix will not, for anyone it already had cached.
 
 ## What was deliberately dropped or scoped out
 

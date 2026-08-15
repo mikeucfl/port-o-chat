@@ -1,7 +1,8 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ChatMessageDto, UserDto } from '@shared/protocolTypes'
 import { avatarColorForUserId, initials } from '../utils/avatarColor'
 import { linkify } from '../utils/linkify'
+import { ConfirmDialog } from './ConfirmDialog'
 import styles from './MessageList.module.css'
 
 const GROUPING_WINDOW_MS = 5 * 60 * 1000
@@ -16,14 +17,22 @@ function isGroupedWithPrevious(current: ChatMessageDto, previous: ChatMessageDto
   return current.timestamp - previous.timestamp <= GROUPING_WINDOW_MS
 }
 
-function MessageBody({ message, senderName }: { message: ChatMessageDto; senderName: string }) {
+function MessageBody({
+  message,
+  senderName,
+  onLinkClick
+}: {
+  message: ChatMessageDto
+  senderName: string
+  onLinkClick: (url: string) => void
+}) {
   if (message.decryptFailed) {
     return <div className={styles.undecryptable}>🔒 Undecryptable message (missing or rotated key)</div>
   }
   return (
     <div className={message.isAction ? styles.actionText : styles.text}>
       {message.isAction && `${senderName} `}
-      {linkify(message.message)}
+      {linkify(message.message, onLinkClick)}
     </div>
   )
 }
@@ -41,6 +50,7 @@ export function MessageList({
   firstUnreadMessageId?: string
 }) {
   const bottomRef = useRef<HTMLDivElement>(null)
+  const [pendingLink, setPendingLink] = useState<string | null>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: 'end' })
@@ -66,7 +76,7 @@ export function MessageList({
             {grouped ? (
               <div className={styles.groupedMessage}>
                 <span className={styles.hoverTimestamp}>{formatTime(message.timestamp)}</span>
-                <MessageBody message={message} senderName={senderName} />
+                <MessageBody message={message} senderName={senderName} onLinkClick={setPendingLink} />
               </div>
             ) : (
               <div className={styles.message}>
@@ -82,7 +92,7 @@ export function MessageList({
                     <span className={styles.timestamp}>{formatTime(message.timestamp)}</span>
                     {message.e2e && <span className={styles.lockGlyph}>🔒</span>}
                   </div>
-                  <MessageBody message={message} senderName={senderName} />
+                  <MessageBody message={message} senderName={senderName} onLinkClick={setPendingLink} />
                 </div>
               </div>
             )}
@@ -90,6 +100,22 @@ export function MessageList({
         )
       })}
       <div ref={bottomRef} />
+
+      {pendingLink && (
+        <ConfirmDialog
+          title="Open link?"
+          message={
+            <>
+              This will open the following link in your default browser:
+              <br />
+              <code className={styles.pendingLinkUrl}>{pendingLink}</code>
+            </>
+          }
+          confirmLabel="Open"
+          onConfirm={() => window.portochat.openExternalLink(pendingLink)}
+          onClose={() => setPendingLink(null)}
+        />
+      )}
     </div>
   )
 }
