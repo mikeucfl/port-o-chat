@@ -63,6 +63,51 @@
   opacity: 0.55;
 }
 
+/* Joined vs. not-joined channels: a channel you're not currently a member
+   of (never joined, or left) reads as dim + italic — still fully
+   clickable (clicking joins it), just visually deferred to the channels
+   you're actually in. */
+.itemNotJoined {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.itemNotJoined .itemTopic {
+  font-style: normal;
+}
+
+.itemNotJoined:hover {
+  color: var(--text-secondary);
+}
+
+.joinedDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--success);
+  flex-shrink: 0;
+}
+
+/* Unread: bolder + brighter, same idea as Discord bolding unread channel names. */
+.itemUnread,
+.itemUnread .itemName {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.unreadBadge {
+  flex-shrink: 0;
+  background: var(--accent);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 999px;
+  min-width: 8px;
+  text-align: center;
+}
+
 .itemName {
   flex: 1;
   overflow: hidden;

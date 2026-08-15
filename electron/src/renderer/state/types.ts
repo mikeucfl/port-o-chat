@@ -30,6 +30,18 @@ export interface AppState {
   channelKeyEpochs: Record<string, number>
   nameError: string | null
   generalError: string | null
+  /** conversationKey -> count of messages received while not being actively viewed. */
+  unreadCounts: Record<string, number>
+  /**
+   * conversationKey -> the clientMessageId of the first message that arrived
+   * while unread. Drives the "New Messages" divider — set the moment a
+   * conversation's unread count goes from 0 to 1, and cleared when the user
+   * navigates away from that conversation (so a later re-visit with no new
+   * activity shows no stale divider).
+   */
+  firstUnreadMessageId: Record<string, string>
+  /** Whether the app window currently has OS focus — an unfocused active conversation still accumulates unread, same as Discord. */
+  windowFocused: boolean
 }
 
 export const initialState: AppState = {
@@ -46,5 +58,8 @@ export const initialState: AppState = {
   peerKeyWarnings: {},
   channelKeyEpochs: {},
   nameError: null,
-  generalError: null
+  generalError: null,
+  unreadCounts: {},
+  firstUnreadMessageId: {},
+  windowFocused: true
 }

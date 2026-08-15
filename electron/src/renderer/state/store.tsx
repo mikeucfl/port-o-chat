@@ -39,6 +39,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => unsubscribers.forEach((unsub) => unsub())
   }, [])
 
+  // Drives unread tracking: an unfocused window still accumulates unread
+  // for the open conversation, same as Discord/Slack (see reducer.ts).
+  useEffect(() => {
+    const onFocus = (): void => dispatch({ type: 'WINDOW_FOCUS_CHANGED', focused: true })
+    const onBlur = (): void => dispatch({ type: 'WINDOW_FOCUS_CHANGED', focused: false })
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('blur', onBlur)
+    }
+  }, [])
+
   return <StoreContext.Provider value={{ state, dispatch }}>{children}</StoreContext.Provider>
 }
 

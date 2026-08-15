@@ -165,7 +165,12 @@ export function ChatScreen() {
                   />
                 )
               )}
-              <MessageList messages={messages} users={state.users} myUserId={state.myUserId} />
+              <MessageList
+                messages={messages}
+                users={state.users}
+                myUserId={state.myUserId}
+                firstUnreadMessageId={activeKey ? state.firstUnreadMessageId[activeKey] : undefined}
+              />
               <Composer
                 target={active}
                 placeholder={active.type === 'channel' ? `Message ${title}` : `Message @${title}`}

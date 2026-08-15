@@ -31,12 +31,29 @@ export type Action =
   | { type: 'PEER_KEY_CHANGED'; event: PeerKeyChangedEvent }
   | { type: 'TRUST_PEER'; userId: string }
   | { type: 'CHANNEL_KEY_ROTATED'; channel: string; epoch: number }
+  | { type: 'WINDOW_FOCUS_CHANGED'; focused: boolean }
   | { type: 'RESET_SESSION' }
 
 function upsertOpenConversation(list: ConversationRef[], ref: ConversationRef): ConversationRef[] {
   const key = conversationKey(ref)
   if (list.some((c) => conversationKey(c) === key)) return list
   return [...list, ref]
+}
+
+/** A conversation only counts as "read as it arrives" when it's the active one AND the window actually has focus — matches Discord: tab away and the open channel still piles up unread. */
+function isBeingActivelyViewed(state: AppState, key: string): boolean {
+  return (
+    state.windowFocused &&
+    state.activeConversation !== null &&
+    conversationKey(state.activeConversation) === key
+  )
+}
+
+function omitKey<T>(record: Record<string, T>, key: string): Record<string, T> {
+  if (!(key in record)) return record
+  const next = { ...record }
+  delete next[key]
+  return next
 }
 
 export function reducer(state: AppState, action: Action): AppState {
@@ -102,7 +119,15 @@ export function reducer(state: AppState, action: Action): AppState {
       const openConversations = state.openConversations.filter(
         (c) => !(c.type === 'channel' && c.name === action.name)
       )
-      return { ...state, channels, channelMembers, openConversations }
+      const key = conversationKey({ type: 'channel', name: action.name })
+      return {
+        ...state,
+        channels,
+        channelMembers,
+        openConversations,
+        unreadCounts: omitKey(state.unreadCounts, key),
+        firstUnreadMessageId: omitKey(state.firstUnreadMessageId, key)
+      }
     }
 
     case 'CHANNEL_JOIN_PART': {
@@ -128,31 +153,71 @@ export function reducer(state: AppState, action: Action): AppState {
         : { type: 'dm', userId: otherPartyId }
       const key = conversationKey(ref)
       const existing = state.messages[key] ?? []
-      return {
+      const nextState: AppState = {
         ...state,
         messages: { ...state.messages, [key]: [...existing, action.message] },
         openConversations: upsertOpenConversation(state.openConversations, ref)
+      }
+
+      if (isBeingActivelyViewed(state, key)) return nextState
+
+      const previousUnread = state.unreadCounts[key] ?? 0
+      return {
+        ...nextState,
+        unreadCounts: { ...state.unreadCounts, [key]: previousUnread + 1 },
+        firstUnreadMessageId:
+          previousUnread === 0
+            ? { ...state.firstUnreadMessageId, [key]: action.message.clientMessageId }
+            : state.firstUnreadMessageId
       }
     }
 
     case 'CLEAR_MESSAGES':
       return { ...state, messages: { ...state.messages, [action.key]: [] } }
 
-    case 'OPEN_CONVERSATION':
+    case 'OPEN_CONVERSATION': {
+      const newKey = conversationKey(action.ref)
+      const previousKey = state.activeConversation ? conversationKey(state.activeConversation) : null
       return {
         ...state,
         openConversations: upsertOpenConversation(state.openConversations, action.ref),
-        activeConversation: action.ref
+        activeConversation: action.ref,
+        // Reading it now — clear its unread badge immediately.
+        unreadCounts: omitKey(state.unreadCounts, newKey),
+        // Drop the divider from whatever we just navigated away from, so a
+        // later re-visit with no new activity doesn't show a stale one; the
+        // divider for the conversation we're entering (if any) stays put.
+        firstUnreadMessageId:
+          previousKey && previousKey !== newKey
+            ? omitKey(state.firstUnreadMessageId, previousKey)
+            : state.firstUnreadMessageId
       }
+    }
 
     case 'CLOSE_CONVERSATION': {
       const key = conversationKey(action.ref)
       const openConversations = state.openConversations.filter((c) => conversationKey(c) !== key)
       const wasActive = state.activeConversation && conversationKey(state.activeConversation) === key
+      // The server never echoes a ChannelPart back to the user who sent it
+      // (same as the original Java server) — without this, our own
+      // membership cache for this channel would keep listing ourselves as
+      // a member after leaving, since nothing else ever corrects it.
+      const channelMembers =
+        action.ref.type === 'channel' && state.myUserId
+          ? {
+              ...state.channelMembers,
+              [action.ref.name]: (state.channelMembers[action.ref.name] ?? []).filter(
+                (id) => id !== state.myUserId
+              )
+            }
+          : state.channelMembers
       return {
         ...state,
         openConversations,
-        activeConversation: wasActive ? (openConversations[0] ?? null) : state.activeConversation
+        activeConversation: wasActive ? (openConversations[0] ?? null) : state.activeConversation,
+        channelMembers,
+        unreadCounts: omitKey(state.unreadCounts, key),
+        firstUnreadMessageId: omitKey(state.firstUnreadMessageId, key)
       }
     }
 
@@ -187,6 +252,17 @@ export function reducer(state: AppState, action: Action): AppState {
         ...state,
         channelKeyEpochs: { ...state.channelKeyEpochs, [action.channel]: action.epoch }
       }
+
+    case 'WINDOW_FOCUS_CHANGED': {
+      if (!action.focused || !state.activeConversation) {
+        return { ...state, windowFocused: action.focused }
+      }
+      // Regaining focus while a conversation is already open counts as
+      // resuming reading it — clear its badge (the divider, if any, stays
+      // until they navigate away, same as any other read-while-viewing).
+      const key = conversationKey(state.activeConversation)
+      return { ...state, windowFocused: true, unreadCounts: omitKey(state.unreadCounts, key) }
+    }
 
     case 'RESET_SESSION':
       return { ...initialState, phase: 'launch' }

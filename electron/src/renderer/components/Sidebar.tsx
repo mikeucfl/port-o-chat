@@ -6,6 +6,11 @@ import { ConfirmDialog } from './ConfirmDialog'
 import { CreateChannelDialog } from './CreateChannelDialog'
 import styles from './Sidebar.module.css'
 
+function UnreadBadge({ count }: { count: number }) {
+  if (count <= 0) return null
+  return <span className={styles.unreadBadge}>{count > 9 ? '9+' : count}</span>
+}
+
 export function Sidebar({
   onOpenFingerprint
 }: {
@@ -71,19 +76,26 @@ export function Sidebar({
         )}
         {channelNames.map((name) => {
           const ref: ConversationRef = { type: 'channel', name }
-          const active = activeKey === conversationKey(ref)
+          const key = conversationKey(ref)
+          const active = activeKey === key
           const topic = state.channels[name]?.topic
+          const isMember = state.channelMembers[name]?.includes(state.myUserId ?? '') ?? false
+          const unread = state.unreadCounts[key] ?? 0
           return (
             <button
               key={name}
-              className={`${styles.item} ${active ? styles.itemActive : ''}`}
+              className={`${styles.item} ${active ? styles.itemActive : ''} ${
+                isMember ? styles.itemJoined : styles.itemNotJoined
+              } ${unread > 0 ? styles.itemUnread : ''}`}
               onClick={() => openChannel(name)}
             >
+              {isMember && <span className={styles.joinedDot} title="You're in this channel" />}
               {state.channels[name]?.e2e && <span className={styles.lockIcon}>🔒</span>}
               <span className={styles.itemTextGroup}>
                 <span className={styles.itemName}>{name}</span>
                 {topic && <span className={styles.itemTopic}>{topic}</span>}
               </span>
+              <UnreadBadge count={unread} />
             </button>
           )
         })}
@@ -98,18 +110,23 @@ export function Sidebar({
         )}
         {otherUsers.map((user) => {
           const ref: ConversationRef = { type: 'dm', userId: user.id }
-          const active = activeKey === conversationKey(ref)
+          const key = conversationKey(ref)
+          const active = activeKey === key
           const warned = !!state.peerKeyWarnings[user.id]
+          const unread = state.unreadCounts[key] ?? 0
           return (
             <button
               key={user.id}
-              className={`${styles.item} ${active ? styles.itemActive : ''}`}
+              className={`${styles.item} ${active ? styles.itemActive : ''} ${
+                unread > 0 ? styles.itemUnread : ''
+              }`}
               onClick={() => openDm(user.id)}
             >
               <span className={styles.onlineDot} />
               <span className={styles.itemName}>{user.name}</span>
               {warned && <span title="Key changed — unverified">⚠</span>}
               {user.e2eCapable && !warned && <span className={styles.lockIcon}>🔒</span>}
+              <UnreadBadge count={unread} />
             </button>
           )
         })}

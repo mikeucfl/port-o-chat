@@ -13,11 +13,14 @@ function formatTime(ts: number): string {
 export function MessageList({
   messages,
   users,
-  myUserId
+  myUserId,
+  firstUnreadMessageId
 }: {
   messages: ChatMessageDto[]
   users: Record<string, UserDto>
   myUserId: string | null
+  /** clientMessageId of the first unread message, if any — renders a "New Messages" divider right before it. */
+  firstUnreadMessageId?: string
 }) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -33,21 +36,30 @@ export function MessageList({
             ? 'You'
             : (users[message.senderId]?.name ?? 'Unknown user')
         return (
-          <div className={styles.message} key={message.clientMessageId}>
-            <div className={styles.avatar}>{initials(senderName)}</div>
-            <div className={styles.body}>
-              <div className={styles.metaLine}>
-                <span className={styles.sender}>{senderName}</span>
-                <span className={styles.timestamp}>{formatTime(message.timestamp)}</span>
-                {message.e2e && <span className={styles.lockGlyph}>🔒</span>}
+          <div key={message.clientMessageId}>
+            {message.clientMessageId === firstUnreadMessageId && (
+              <div className={styles.unreadDivider}>
+                <span className={styles.unreadDividerLabel}>New Messages</span>
               </div>
-              {message.decryptFailed ? (
-                <div className={styles.undecryptable}>🔒 Undecryptable message (missing or rotated key)</div>
-              ) : (
-                <div className={message.isAction ? styles.actionText : styles.text}>
-                  {message.isAction ? `${senderName} ${message.message}` : message.message}
+            )}
+            <div className={styles.message}>
+              <div className={styles.avatar}>{initials(senderName)}</div>
+              <div className={styles.body}>
+                <div className={styles.metaLine}>
+                  <span className={styles.sender}>{senderName}</span>
+                  <span className={styles.timestamp}>{formatTime(message.timestamp)}</span>
+                  {message.e2e && <span className={styles.lockGlyph}>🔒</span>}
                 </div>
-              )}
+                {message.decryptFailed ? (
+                  <div className={styles.undecryptable}>
+                    🔒 Undecryptable message (missing or rotated key)
+                  </div>
+                ) : (
+                  <div className={message.isAction ? styles.actionText : styles.text}>
+                    {message.isAction ? `${senderName} ${message.message}` : message.message}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )
