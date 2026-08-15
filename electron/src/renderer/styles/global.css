@@ -67,6 +67,15 @@ textarea {
   background: var(--text-muted);
 }
 
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
 .app-shell {
   display: flex;
   flex-direction: column;

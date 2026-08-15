@@ -1,13 +1,31 @@
 import { useEffect, useRef } from 'react'
 import type { ChatMessageDto, UserDto } from '@shared/protocolTypes'
+import { avatarColorForUserId, initials } from '../utils/avatarColor'
+import { linkify } from '../utils/linkify'
 import styles from './MessageList.module.css'
 
-function initials(name: string): string {
-  return name.slice(0, 2).toUpperCase() || '?'
-}
+const GROUPING_WINDOW_MS = 5 * 60 * 1000
 
 function formatTime(ts: number): string {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+}
+
+function isGroupedWithPrevious(current: ChatMessageDto, previous: ChatMessageDto | undefined): boolean {
+  if (!previous) return false
+  if (current.senderId !== previous.senderId) return false
+  return current.timestamp - previous.timestamp <= GROUPING_WINDOW_MS
+}
+
+function MessageBody({ message, senderName }: { message: ChatMessageDto; senderName: string }) {
+  if (message.decryptFailed) {
+    return <div className={styles.undecryptable}>🔒 Undecryptable message (missing or rotated key)</div>
+  }
+  return (
+    <div className={message.isAction ? styles.actionText : styles.text}>
+      {message.isAction && `${senderName} `}
+      {linkify(message.message)}
+    </div>
+  )
 }
 
 export function MessageList({
@@ -30,37 +48,44 @@ export function MessageList({
 
   return (
     <div className={styles.list}>
-      {messages.map((message) => {
+      {messages.map((message, i) => {
         const senderName =
-          message.senderId === myUserId
-            ? 'You'
-            : (users[message.senderId]?.name ?? 'Unknown user')
+          message.senderId === myUserId ? 'You' : (users[message.senderId]?.name ?? 'Unknown user')
+        const showsDivider = message.clientMessageId === firstUnreadMessageId
+        // A divider always breaks message grouping — "New Messages" should
+        // never sit in the middle of what looks like one continuous block.
+        const grouped = !showsDivider && isGroupedWithPrevious(message, messages[i - 1])
+
         return (
           <div key={message.clientMessageId}>
-            {message.clientMessageId === firstUnreadMessageId && (
+            {showsDivider && (
               <div className={styles.unreadDivider}>
                 <span className={styles.unreadDividerLabel}>New Messages</span>
               </div>
             )}
-            <div className={styles.message}>
-              <div className={styles.avatar}>{initials(senderName)}</div>
-              <div className={styles.body}>
-                <div className={styles.metaLine}>
-                  <span className={styles.sender}>{senderName}</span>
-                  <span className={styles.timestamp}>{formatTime(message.timestamp)}</span>
-                  {message.e2e && <span className={styles.lockGlyph}>🔒</span>}
-                </div>
-                {message.decryptFailed ? (
-                  <div className={styles.undecryptable}>
-                    🔒 Undecryptable message (missing or rotated key)
-                  </div>
-                ) : (
-                  <div className={message.isAction ? styles.actionText : styles.text}>
-                    {message.isAction ? `${senderName} ${message.message}` : message.message}
-                  </div>
-                )}
+            {grouped ? (
+              <div className={styles.groupedMessage}>
+                <span className={styles.hoverTimestamp}>{formatTime(message.timestamp)}</span>
+                <MessageBody message={message} senderName={senderName} />
               </div>
-            </div>
+            ) : (
+              <div className={styles.message}>
+                <div
+                  className={styles.avatar}
+                  style={{ background: avatarColorForUserId(message.senderId) }}
+                >
+                  {initials(senderName)}
+                </div>
+                <div className={styles.body}>
+                  <div className={styles.metaLine}>
+                    <span className={styles.sender}>{senderName}</span>
+                    <span className={styles.timestamp}>{formatTime(message.timestamp)}</span>
+                    {message.e2e && <span className={styles.lockGlyph}>🔒</span>}
+                  </div>
+                  <MessageBody message={message} senderName={senderName} />
+                </div>
+              </div>
+            )}
           </div>
         )
       })}

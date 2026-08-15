@@ -13,6 +13,29 @@ export function conversationKey(ref: ConversationRef): string {
   return ref.type === 'channel' ? `channel:${ref.name}` : `dm:${ref.userId}`
 }
 
+/** Which conversation a given chat message belongs to, from the local user's point of view. */
+export function conversationRefForMessage(
+  message: ChatMessageDto,
+  myUserId: string | null
+): ConversationRef {
+  if (message.isChannel) return { type: 'channel', name: message.destinationId }
+  const otherPartyId = message.senderId === myUserId ? message.destinationId : message.senderId
+  return { type: 'dm', userId: otherPartyId }
+}
+
+/**
+ * A conversation only counts as "being read live as messages arrive" when
+ * it's the active one AND the window actually has focus — matches Discord:
+ * tab away from the app and the open conversation still piles up unread.
+ */
+export function isBeingActivelyViewed(state: AppState, key: string): boolean {
+  return (
+    state.windowFocused &&
+    state.activeConversation !== null &&
+    conversationKey(state.activeConversation) === key
+  )
+}
+
 export interface AppState {
   phase: Phase
   connection: 'disconnected' | 'connecting' | 'connected'

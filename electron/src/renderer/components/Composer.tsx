@@ -1,12 +1,25 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { MAX_MESSAGE_TEXT_LENGTH } from '@shared/constants'
 import { conversationKey, type ConversationRef } from '../state/types'
 import { useStore } from '../state/store'
 import styles from './Composer.module.css'
 
+const MAX_TEXTAREA_HEIGHT_PX = 160
+
 export function Composer({ target, placeholder }: { target: ConversationRef; placeholder: string }) {
   const { dispatch } = useStore()
   const [text, setText] = useState('')
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // Auto-grows with content up to a cap, then scrolls — a plain <input>
+  // can't hold a newline at all, so multi-line (Shift+Enter) messages
+  // needed this to be a <textarea> in the first place.
+  useLayoutEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT_PX)}px`
+  }, [text])
 
   function handleSubmit(): void {
     const raw = text.trim()
@@ -37,14 +50,19 @@ export function Composer({ target, placeholder }: { target: ConversationRef; pla
   return (
     <div className={styles.composer}>
       <div className={styles.inputRow}>
-        <input
+        <textarea
+          ref={textareaRef}
           className={styles.input}
+          rows={1}
           value={text}
           maxLength={MAX_MESSAGE_TEXT_LENGTH}
           placeholder={placeholder}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') handleSubmit()
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault()
+              handleSubmit()
+            }
           }}
           autoFocus
         />

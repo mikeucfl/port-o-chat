@@ -1,4 +1,5 @@
 import type { UserDto } from '@shared/protocolTypes'
+import { avatarColorForUserId, initials } from '../utils/avatarColor'
 import styles from './MemberList.module.css'
 
 export function MemberList({
@@ -20,6 +21,9 @@ export function MemberList({
           onClick={() => onOpenFingerprint(member.id)}
           title="View safety number"
         >
+          <span className={styles.avatar} style={{ background: avatarColorForUserId(member.id) }}>
+            {initials(member.name)}
+          </span>
           <span className={styles.name}>{member.name}</span>
           {peerKeyWarnings[member.id] ? (
             <span title="Key changed — unverified">⚠</span>

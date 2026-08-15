@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { BrowserWindow, ipcMain } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeImage } from 'electron'
 import { IPC_INVOKE, IPC_EVENT } from '@shared/ipc-contract'
 import type {
   AppConfig,
@@ -30,6 +30,7 @@ import { loadConfig, saveConfigPatch } from '../config/settings'
 import { getLanIPv4Addresses } from '../net/lanAddresses'
 import { TcpChatServer } from '../net/tcpServer'
 import { portochat } from '../proto-gen/portochat'
+import { solidCircleDot } from '../util/badgeIcon'
 
 interface RosterEntry {
   id: string
@@ -56,6 +57,7 @@ export class SessionController {
   private channelMembers = new Map<string, Set<string>>()
   private channelMeta = new Map<string, { e2e: boolean; creatorId: string; topic: string }>()
   private pendingCreations = new Set<string>()
+  private overlayIconCache = new Map<number, Electron.NativeImage>()
 
   attachWindow(win: BrowserWindow): void {
     this.window = win
@@ -306,6 +308,39 @@ export class SessionController {
 
   trustPeerKey(userId: string): void {
     this.trustStore.trust(userId)
+  }
+
+  // ---- window/OS integration ------------------------------------------------
+
+  flashWindow(): void {
+    this.window?.flashFrame(true)
+  }
+
+  focusWindow(): void {
+    if (!this.window || this.window.isDestroyed()) return
+    if (this.window.isMinimized()) this.window.restore()
+    this.window.show()
+    this.window.focus()
+  }
+
+  setUnreadBadge(count: number): void {
+    // macOS dock / some Linux DEs: a real numeric badge.
+    app.setBadgeCount(count)
+
+    // Windows has no equivalent OS-level API — draw a small taskbar overlay
+    // dot instead (not the exact count; just "you have something unread").
+    if (process.platform === 'win32' && this.window && !this.window.isDestroyed()) {
+      if (count > 0) {
+        let icon = this.overlayIconCache.get(1)
+        if (!icon) {
+          icon = nativeImage.createFromBuffer(solidCircleDot(16, 218, 55, 60))
+          this.overlayIconCache.set(1, icon)
+        }
+        this.window.setOverlayIcon(icon, `${count} unread`)
+      } else {
+        this.window.setOverlayIcon(null, '')
+      }
+    }
   }
 
   // ---- incoming message handling ---------------------------------------------
@@ -615,4 +650,8 @@ export function registerIpcHandlers(controller: SessionController): void {
   ipcMain.handle(IPC_INVOKE.getFingerprint, (_e, userId: string) => controller.getFingerprint(userId))
   ipcMain.handle(IPC_INVOKE.getMyFingerprint, () => controller.getMyFingerprint())
   ipcMain.handle(IPC_INVOKE.trustPeerKey, (_e, userId: string) => controller.trustPeerKey(userId))
+
+  ipcMain.handle(IPC_INVOKE.flashWindow, () => controller.flashWindow())
+  ipcMain.handle(IPC_INVOKE.focusWindow, () => controller.focusWindow())
+  ipcMain.handle(IPC_INVOKE.setUnreadBadge, (_e, count: number) => controller.setUnreadBadge(count))
 }

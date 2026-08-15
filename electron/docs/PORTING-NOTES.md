@@ -90,6 +90,34 @@ dropped, and the honest state of Java-interop testing.
   Backward compatible with old Java peers the same way every other
   addition here is: a new, additively-numbered protobuf field/message that
   proto3's unknown-field skipping lets old clients/servers ignore.
+- **Unread tracking, notifications, and message-list polish — new,
+  UI-only, no wire-protocol changes involved.** The Java client had one
+  crude piece of this (`NotificationTimerListener`: flashed the taskbar
+  and changed the window title when unfocused, using `toFront()` to force
+  focus on Windows — arguably bad UX by modern standards). This app
+  replaces that with: a native OS notification per unread message (never
+  containing real content for an E2E conversation — see CRYPTO.md's Zero
+  persistence section), a non-focus-stealing taskbar/dock flash
+  (`BrowserWindow.flashFrame`) instead of forcing focus, and an OS
+  taskbar/dock unread badge (`app.setBadgeCount` on macOS/Linux; a
+  hand-drawn small overlay dot via a from-scratch PNG encoder on Windows,
+  since Windows has no equivalent count-badge API and pulling in an image
+  library for one small dot felt unwarranted — see
+  `src/main/util/badgeIcon.ts`). Also new, and not present in the Java
+  client at all: consecutive same-sender messages now visually group
+  (Discord-style, hover to see the timestamp of a grouped message), each
+  user gets a deterministic avatar color instead of one flat accent color
+  for everyone, and the composer is a real multi-line `<textarea>`
+  (Shift+Enter for a newline) — the original single-line `<input>`
+  literally could not hold a newline at all.
+- **Clickable links — restored, not new.** The Java client auto-linked
+  `http(s)://`/`www.` text (`ChatPane.convertLinks`); this port's
+  MessageList originally just rendered plain text, which was a real
+  regression from the original, now fixed (`utils/linkify.tsx`). Reuses
+  `main/index.ts`'s existing `will-navigate` handler (there specifically
+  to keep the renderer from ever navigating anywhere on its own) to open
+  the link in the OS default browser, rather than adding a second,
+  separate "open a link" code path.
 
 ## What was deliberately dropped or scoped out
 

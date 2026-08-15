@@ -7,7 +7,15 @@ import type {
   UserConnectionStatusEvent,
   UserDto
 } from '@shared/protocolTypes'
-import { type AppState, type ConversationRef, type Phase, conversationKey, initialState } from './types'
+import {
+  type AppState,
+  type ConversationRef,
+  type Phase,
+  conversationKey,
+  conversationRefForMessage,
+  initialState,
+  isBeingActivelyViewed
+} from './types'
 
 export type Action =
   | { type: 'SET_PHASE'; phase: Phase }
@@ -38,15 +46,6 @@ function upsertOpenConversation(list: ConversationRef[], ref: ConversationRef): 
   const key = conversationKey(ref)
   if (list.some((c) => conversationKey(c) === key)) return list
   return [...list, ref]
-}
-
-/** A conversation only counts as "read as it arrives" when it's the active one AND the window actually has focus — matches Discord: tab away and the open channel still piles up unread. */
-function isBeingActivelyViewed(state: AppState, key: string): boolean {
-  return (
-    state.windowFocused &&
-    state.activeConversation !== null &&
-    conversationKey(state.activeConversation) === key
-  )
 }
 
 function omitKey<T>(record: Record<string, T>, key: string): Record<string, T> {
@@ -144,13 +143,7 @@ export function reducer(state: AppState, action: Action): AppState {
     }
 
     case 'CHAT_MESSAGE': {
-      const isChannel = action.message.isChannel
-      const otherPartyId = action.message.senderId === state.myUserId
-        ? action.message.destinationId
-        : action.message.senderId
-      const ref: ConversationRef = isChannel
-        ? { type: 'channel', name: action.message.destinationId }
-        : { type: 'dm', userId: otherPartyId }
+      const ref = conversationRefForMessage(action.message, state.myUserId)
       const key = conversationKey(ref)
       const existing = state.messages[key] ?? []
       const nextState: AppState = {

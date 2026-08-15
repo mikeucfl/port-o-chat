@@ -172,6 +172,7 @@ export function ChatScreen() {
                 firstUnreadMessageId={activeKey ? state.firstUnreadMessageId[activeKey] : undefined}
               />
               <Composer
+                key={activeKey}
                 target={active}
                 placeholder={active.type === 'channel' ? `Message ${title}` : `Message @${title}`}
               />
