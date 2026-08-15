@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { MAX_NICKNAME_LENGTH } from '@shared/constants'
 import { useStore } from '../state/store'
 import { conversationKey, type ConversationRef } from '../state/types'
 import { CreateChannelDialog } from './CreateChannelDialog'
@@ -11,6 +12,16 @@ export function Sidebar({
 }) {
   const { state, dispatch } = useStore()
   const [showCreateChannel, setShowCreateChannel] = useState(false)
+  const [renaming, setRenaming] = useState(false)
+  const [renameDraft, setRenameDraft] = useState('')
+
+  function submitRename(): void {
+    const trimmed = renameDraft.trim()
+    if (trimmed && trimmed !== state.myNickname) {
+      window.portochat.setNickname(trimmed)
+    }
+    setRenaming(false)
+  }
 
   const activeKey = state.activeConversation ? conversationKey(state.activeConversation) : null
   const channelNames = useMemo(() => Object.keys(state.channels).sort(), [state.channels])
@@ -100,9 +111,33 @@ export function Sidebar({
 
       <div className={styles.footer}>
         <div className={styles.footerName}>
-          <div className={styles.footerNickname}>{state.myNickname}</div>
+          {renaming ? (
+            <input
+              className={styles.renameInput}
+              autoFocus
+              value={renameDraft}
+              maxLength={MAX_NICKNAME_LENGTH}
+              onChange={(e) => setRenameDraft(e.target.value)}
+              onBlur={submitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') submitRename()
+                if (e.key === 'Escape') setRenaming(false)
+              }}
+            />
+          ) : (
+            <div
+              className={styles.footerNickname}
+              title="Click to change your nickname"
+              onClick={() => {
+                setRenameDraft(state.myNickname)
+                setRenaming(true)
+              }}
+            >
+              {state.myNickname}
+            </div>
+          )}
           <div className={styles.footerStatus}>
-            {state.connection === 'connected' ? 'Connected' : state.connection}
+            {state.nameError ?? (state.connection === 'connected' ? 'Connected' : state.connection)}
           </div>
         </div>
         <button

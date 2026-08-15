@@ -112,6 +112,24 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.footerNickname:hover {
+  text-decoration: underline;
+}
+
+.renameInput {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 13px;
+  padding: 2px 4px;
+  outline: none;
 }
 
 .footerStatus {
