@@ -19,6 +19,8 @@ const RequestType = portochat.Request.RequestType
  * Emits:
  *   'stateChange' (state: ConnectionState, error?: Error)
  *   'message'     (message: portochat.PortoChatMessage)   — raw, pass-through
+ *   'identity'    (userId: string, username: string)      — once our own
+ *                  server-assigned id becomes known (see observeSelfId)
  */
 export class ChatSession extends EventEmitter {
   private client = new TcpClient()
@@ -36,6 +38,15 @@ export class ChatSession extends EventEmitter {
     })
     this.client.on('message', (message: portochat.PortoChatMessage) => {
       this.observeSelfId(message)
+      if (message.ApplicationMessage === 'ping') {
+        // Transport-level keepalive: reply immediately, same as the Java
+        // client did. This must never depend on the renderer being alive
+        // or responsive — a slow UI thread must not cause a keepalive
+        // timeout, so it's handled here rather than round-tripped through
+        // IPC.
+        this.client.send({ pong: { timestamp: message.ping?.timestamp ?? 0 } })
+        return
+      }
       this.emit('message', message)
     })
   }
@@ -52,7 +63,10 @@ export class ChatSession extends EventEmitter {
     const status = message.notification?.userConnectionStatus
     if (status?.user) candidates.push(status.user)
     const self = candidates.find((u) => u.name === this.myUsername)
-    if (self?.id) this.myUserId = self.id
+    if (self?.id) {
+      this.myUserId = self.id
+      this.emit('identity', self.id, this.myUsername)
+    }
   }
 
   async connect(

@@ -22,8 +22,7 @@ class Simulation {
     const manager = new ChannelKeyManager({
       myUserId: userId,
       myPrivateKey: privateKey,
-      sendKeyShare: (toUserId, wrappedKey, nonce, epoch) => {
-        const channel = this.currentChannel
+      sendKeyShare: (channel, toUserId, wrappedKey, nonce, epoch) => {
         const target = this.parties.get(toUserId)
         target?.manager.receiveKeyShare(channel, userId, wrappedKey, nonce, epoch)
       },
@@ -36,7 +35,6 @@ class Simulation {
     return party
   }
 
-  currentChannel = '#secret'
   members = new Map<string, Set<string>>()
 
   setMembers(channel: string, ids: string[]): void {

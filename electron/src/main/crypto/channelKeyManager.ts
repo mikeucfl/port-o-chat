@@ -9,7 +9,7 @@ export interface ChannelKeyState {
 export interface ChannelKeyManagerDeps {
   myUserId: string
   myPrivateKey: KeyObject
-  sendKeyShare: (toUserId: string, wrappedKey: Buffer, nonce: Buffer, epoch: number) => void
+  sendKeyShare: (channel: string, toUserId: string, wrappedKey: Buffer, nonce: Buffer, epoch: number) => void
   getPeerPublicKey: (userId: string) => Buffer | undefined
   /** Current members of the channel, excluding the local user. */
   getOtherMembers: (channel: string) => string[]
@@ -67,7 +67,7 @@ export class ChannelKeyManager {
       toUserId: joinerUserId,
       epoch: current.epoch
     })
-    this.deps.sendKeyShare(joinerUserId, sealed.ciphertext, sealed.nonce, current.epoch)
+    this.deps.sendKeyShare(channel, joinerUserId, sealed.ciphertext, sealed.nonce, current.epoch)
   }
 
   /** Returns true if this KeyShare was successfully applied (first valid one for its epoch wins; later duplicates are discarded). */
@@ -125,7 +125,7 @@ export class ChannelKeyManager {
         toUserId: memberId,
         epoch: newEpoch
       })
-      this.deps.sendKeyShare(memberId, sealed.ciphertext, sealed.nonce, newEpoch)
+      this.deps.sendKeyShare(channel, memberId, sealed.ciphertext, sealed.nonce, newEpoch)
     }
     this.channels.set(channel, { key: newKey, epoch: newEpoch })
     this.deps.onKeyReady?.(channel, newEpoch)

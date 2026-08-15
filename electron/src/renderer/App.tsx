@@ -1,10 +1,23 @@
+import { ChatScreen } from './screens/ChatScreen'
+import { HostSetupScreen } from './screens/HostSetupScreen'
+import { JoinSetupScreen } from './screens/JoinSetupScreen'
+import { LaunchScreen } from './screens/LaunchScreen'
+import { useStore } from './state/store'
+
 function App() {
-  return (
-    <div className="app-shell">
-      <h1>Port-O-Chat</h1>
-      <p>Scaffold booting — launch screen goes here next.</p>
-    </div>
-  )
+  const { state } = useStore()
+
+  switch (state.phase) {
+    case 'hostSetup':
+      return <HostSetupScreen />
+    case 'joinSetup':
+      return <JoinSetupScreen />
+    case 'chat':
+      return <ChatScreen />
+    case 'launch':
+    default:
+      return <LaunchScreen />
+  }
 }
 
 export default App

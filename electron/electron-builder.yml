@@ -13,6 +13,8 @@ win:
       arch:
         - x64
   artifactName: ${productName}-${version}-${arch}.${ext}
+  signAndEditExecutable: false
+  verifyUpdateCodeSignature: false
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

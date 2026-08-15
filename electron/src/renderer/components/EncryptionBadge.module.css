@@ -1,0 +1,20 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.encrypted {
+  background: rgba(35, 165, 90, 0.15);
+  color: var(--success);
+}
+
+.plain {
+  background: rgba(128, 132, 142, 0.15);
+  color: var(--text-muted);
+}

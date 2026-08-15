@@ -43,7 +43,7 @@ async function build(): Promise<void> {
     '-t',
     'static-module',
     '-w',
-    'commonjs',
+    'es6',
     '--no-verify',
     protoFile
   ])
