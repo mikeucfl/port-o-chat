@@ -162,6 +162,34 @@ dropped, and the honest state of Java-interop testing.
   after joining, before the first `KeyShare` arrives) — the badge itself
   just doesn't show that transient sub-state.
 
+## Potential future work (not started)
+
+Ideas raised during this port that are explicitly **not implemented** —
+listed here so the reasoning doesn't get lost, not because any of this is
+planned or in progress.
+
+- **A browser-based client.** Nothing in this project currently runs in a
+  browser tab, and it's not just a hosting/deployment question — it's a
+  protocol mismatch. The wire protocol is raw TCP (Node's `net` module);
+  browsers cannot open raw TCP sockets or bind a listening TCP server at
+  all, full stop, on any OS. Only this Electron app and the original Java
+  app can talk to a hosted server today, because both speak raw TCP
+  directly. A browser client would require: a genuinely separate web
+  client (not this Electron app, since the renderer does nothing without
+  Electron's `contextBridge`), a WebSocket gateway in front of (or built
+  into) the existing server translating WS traffic into the same protobuf
+  messages, and the E2E crypto reimplemented against the browser's Web
+  Crypto API instead of Node's `crypto` module (the primitives — X25519,
+  AES-GCM, HKDF — are available in both, but the APIs aren't a drop-in
+  match). Somewhat more approachable than it sounds, since `server/router.ts`
+  already only depends on the transport-agnostic `PeerConnection` interface
+  (see `server/peer.ts`) specifically so it doesn't care whether the other
+  end is a raw TCP socket or something else — but it's still a new client
+  stack, not a small addition. **A browser tab could also never be the one
+  doing the hosting** — that's not a missing feature, it's categorically
+  impossible for any browser page to bind a listening socket that other
+  computers connect to.
+
 ## Java interop — honest status
 
 Real cross-implementation testing **was performed**, though it took an
