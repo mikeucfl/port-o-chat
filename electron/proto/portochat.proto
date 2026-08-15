@@ -1,0 +1,210 @@
+syntax = "proto3";
+
+package portochat;
+
+option java_package = "com.lttldrgn.portochat.proto";
+
+// This schema is a superset of the original Java port-o-chat protocol
+// (src/main/proto/portochat.proto). Every field below that existed in the
+// original keeps its exact original field number and type so this app stays
+// wire-compatible with unmodified Java clients/servers. All additions below
+// use fresh field numbers and are marked "New:" — proto3 unknown-field
+// skipping means old Java peers silently ignore them instead of breaking.
+// See docs/PROTOCOL.md for the full explanation of each addition.
+
+message StringData {
+    string value = 1;
+}
+
+message StringList {
+    repeated string values = 1;
+}
+
+message UserData {
+    string id = 1;
+    string name = 2;
+    string host = 3;
+    // New: raw 32-byte X25519 identity public key. Presence indicates the
+    // user's client is E2E-capable.
+    bytes e2eIdentityKey = 4;
+}
+
+message PortoChatMessage {
+    string originatorId = 1;
+    oneof ApplicationMessage {
+        ChannelList channelList = 2;
+        ChatMessage chatMessage = 3;
+        ErrorMessage errorMessage = 4;
+        Notification notification = 5;
+        Ping ping = 6;
+        Pong pong = 7;
+        Request request = 8;
+        Response response = 9;
+        UserList userList = 10;
+        // New: keyshare delivery for E2E channels (wrapped symmetric key).
+        KeyShare keyShare = 11;
+    }
+}
+
+message ChatMessage {
+    string senderId = 1;
+    string destinationId = 2;
+    bool isChannel = 3;
+    string message = 4;
+    bool isAction = 5;
+    // New: E2E envelope. When set, `message` above is left empty and the
+    // plaintext lives only at the endpoints. AES-256-GCM ciphertext.
+    bytes e2eCiphertext = 6;
+    // New: 12-byte AEAD nonce, unique per message, never reused under the
+    // same key.
+    bytes e2eNonce = 7;
+    // New: reserved for a future forward-secrecy upgrade (per-message
+    // ephemeral key). Unused/empty in this version — see CRYPTO.md.
+    bytes e2eSenderEphemeralKey = 8;
+    // New: which channel-key epoch this message was encrypted under, so a
+    // recipient who has already rotated past it can show a clear
+    // "undecryptable" placeholder instead of failing silently.
+    uint32 e2eKeyEpoch = 9;
+}
+
+message ErrorMessage {
+    enum ErrorType {
+        UserNameInUse = 0;
+        ChannelDoesNotExist = 1;
+        // New: returned when a client without an E2E identity key (e.g. an
+        // unmodified Java client) tries to join a channel that was created
+        // as end-to-end encrypted.
+        E2EChannelRequiresSupport = 2;
+    }
+    ErrorType errorType = 1;
+    string additionalMessage = 2;
+}
+
+message Request {
+    enum RequestType {
+        ChannelList = 0;
+        ChannelUserList = 1;
+        ChannelJoin = 2;
+        SetServerSharedKey = 3; // request to client to start using encryption
+        SetUserName = 4;
+        SetUserPublicKey = 5;
+        UserList = 6;
+        // New: client announces its E2E identity public key to the server
+        // for distribution to other users. Distinct from the legacy
+        // SetUserPublicKey (RSA, transport-only) above.
+        SetE2EPublicKey = 7;
+    }
+    string requestId = 1;
+    RequestType requestType = 2;
+    oneof RequestData {
+        StringData stringRequestData = 3;
+        bytes byteData = 4;
+    }
+    // New: only meaningful on a ChannelJoin request that creates a new
+    // channel. Declares the channel end-to-end encrypted. Immutable after
+    // creation.
+    bool e2eChannel = 5;
+}
+
+message Response {
+    enum ResponseType {
+        ServerKeyAccepted = 0;
+    }
+    string requestId = 1;
+    ResponseType responseType = 2;
+}
+
+message Notification {
+    oneof NotificationData {
+        ChannelJoin channelJoin = 1;
+        ChannelPart channelPart = 2;
+        ChannelAdded channelAdded = 3;
+        ChannelRemoved channelRemoved = 4;
+        UserConnectionStatus userConnectionStatus = 5;
+        UserDoesNotExist userDoesNotExist = 6;
+        UserNameSet userNameSet = 7;
+        // New: informs channel members that the channel's symmetric key was
+        // rotated (a member departed) and a new epoch is in effect. Carries
+        // no key material itself — the actual key arrives via KeyShare.
+        KeyRotationNotice keyRotationNotice = 8;
+    }
+}
+
+message ChannelJoin {
+    string channel = 1;
+    string userId = 2;
+}
+message ChannelPart {
+    string channel = 1;
+    string userId = 2;
+}
+message ChannelAdded {
+    string channel = 1;
+    // New: true if this channel was created end-to-end encrypted.
+    bool e2eChannel = 2;
+}
+message ChannelRemoved {
+    string channel = 1;
+}
+message ChannelList {
+    StringList channels = 1;
+    // New: per-channel metadata (currently just the E2E flag) for channels
+    // in `channels` above. Old clients ignore this and only see names.
+    repeated ChannelMetadata channelMeta = 2;
+}
+message UserList {
+    repeated UserData users = 1;
+    string channel = 2;
+}
+
+message UserConnectionStatus {
+    UserData user = 1;
+    bool connected = 2;
+}
+
+message UserDoesNotExist {
+    UserData user = 1;
+    // New: the id that was actually looked up and not found. The original
+    // Java server had a bug where `user` above was populated with the
+    // *sender's* own data instead of anything about the missing recipient;
+    // this app leaves `user` empty and reports the real id here instead.
+    string missingId = 2;
+}
+
+message UserNameSet {
+    string name = 1;
+}
+
+message Ping {
+    int64 timestamp = 1;
+}
+message Pong {
+    int64 timestamp = 1;
+}
+
+// New messages below (E2E only, no equivalent in the original Java schema).
+
+// Per-channel metadata companion to ChannelList.channels.
+message ChannelMetadata {
+    string channel = 1;
+    bool e2eChannel = 2;
+}
+
+// Delivers a channel's symmetric key, wrapped via ECDH+HKDF+AEAD to a single
+// recipient's X25519 public key. The server relays this opaquely and must
+// never be able to decode wrappedKey.
+message KeyShare {
+    string channel = 1;
+    string toUserId = 2;
+    string fromUserId = 3;
+    bytes wrappedKey = 4;
+    bytes nonce = 5;
+    // Reserved for a future forward-secrecy upgrade, unused in this version.
+    bytes senderEphemeralKey = 6;
+    uint32 keyEpoch = 7;
+}
+
+message KeyRotationNotice {
+    string channel = 1;
+    uint32 keyEpoch = 2;
+}

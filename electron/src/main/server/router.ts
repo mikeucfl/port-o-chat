@@ -1,0 +1,345 @@
+import {
+  MAX_CHANNEL_NAME_LENGTH,
+  MAX_E2E_CIPHERTEXT_LENGTH,
+  MAX_MESSAGE_TEXT_LENGTH,
+  MAX_NICKNAME_LENGTH
+} from '@shared/constants'
+import { portochat } from '../proto-gen/portochat'
+import type { ChannelRegistry } from './channelRegistry'
+import type { PeerConnection } from './peer'
+import type { UserRecord } from './userRegistry'
+import type { UserRegistry } from './userRegistry'
+
+const ErrorType = portochat.ErrorMessage.ErrorType
+
+function userToUserData(user: UserRecord): portochat.IUserData {
+  return {
+    id: user.id,
+    name: user.name ?? '',
+    host: user.host,
+    e2eIdentityKey: user.e2eIdentityKey ?? undefined
+  }
+}
+
+function userConnectionStatus(user: UserRecord, connected: boolean): portochat.IPortoChatMessage {
+  return { notification: { userConnectionStatus: { user: userToUserData(user), connected } } }
+}
+
+/**
+ * Routes incoming protocol messages and maintains user/channel state.
+ * Transport-agnostic (operates purely on PeerConnection) so it can be
+ * exercised in unit tests without a real socket.
+ *
+ * Fixes, relative to the original Java Server.java, three confirmed bugs:
+ *   1. No fallthrough from the legacy key-exchange path into UserList
+ *      (that whole legacy RSA/AES path is dropped — see PORTING-NOTES.md).
+ *   2. Stale/timed-out clients are actually disconnected (see keepalive.ts),
+ *      not just logged.
+ *   3. A DM to a disconnected/unknown user reports the *actual missing id*
+ *      (UserDoesNotExist.missingId) instead of the sender's own data.
+ *
+ * Also adds two hardening checks the Java server never had: a relayed
+ * ChatMessage's senderId is always overwritten with the authenticated
+ * connection's own user id (a client can never spoof another user's
+ * identity), and channel messages are only relayed if the sender is
+ * actually a member of that channel.
+ */
+export class ChatRouter {
+  constructor(
+    private readonly users: UserRegistry,
+    private readonly channels: ChannelRegistry
+  ) {}
+
+  handleConnect(peer: PeerConnection, host: string): UserRecord {
+    return this.users.addConnection(peer, host)
+  }
+
+  handleDisconnect(peer: PeerConnection): void {
+    const user = this.users.removeConnection(peer)
+    if (!user) return
+
+    const { removed, remaining } = this.channels.removeUserFromAllChannels(user.id)
+    for (const channel of removed) {
+      this.broadcastToAll({ notification: { channelRemoved: { channel } } })
+    }
+    for (const channel of remaining) {
+      this.broadcastToChannel(channel, user.id, {
+        notification: { channelPart: { channel, userId: user.id } }
+      })
+      this.triggerKeyRotationIfE2E(channel)
+    }
+
+    if (user.name !== null) {
+      this.broadcastToAll(userConnectionStatus(user, false))
+    }
+  }
+
+  handleMessage(peer: PeerConnection, message: portochat.PortoChatMessage): void {
+    const user = this.users.getByPeer(peer)
+    if (!user) return // shouldn't happen: connect always precedes messages
+
+    switch (message.ApplicationMessage) {
+      case 'request':
+        if (message.request) this.handleRequest(user, message.request)
+        break
+      case 'notification':
+        if (message.notification) this.handleNotification(user, message.notification)
+        break
+      case 'chatMessage':
+        if (message.chatMessage) this.handleChatMessage(user, message.chatMessage)
+        break
+      case 'keyShare':
+        if (message.keyShare) this.handleKeyShare(user, message.keyShare)
+        break
+      case 'ping':
+        user.peer.send({ pong: { timestamp: message.ping?.timestamp ?? 0 } })
+        break
+      case 'pong':
+        this.users.touchLastSeen(user)
+        break
+      default:
+        // response/legacy/unknown cases: nothing for this server to do.
+        break
+    }
+  }
+
+  // ---- Request handling -------------------------------------------------
+
+  private handleRequest(user: UserRecord, request: portochat.IRequest): void {
+    const RequestType = portochat.Request.RequestType
+    switch (request.requestType) {
+      case RequestType.ChannelList:
+        this.sendChannelList(user)
+        break
+      case RequestType.ChannelUserList:
+        this.sendChannelUserList(user, request.stringRequestData?.value ?? '')
+        break
+      case RequestType.ChannelJoin:
+        this.handleChannelJoin(user, request)
+        break
+      case RequestType.SetUserName:
+        this.handleSetUserName(user, request.stringRequestData?.value ?? '')
+        break
+      case RequestType.SetE2EPublicKey:
+        this.handleSetE2EPublicKey(user, request.byteData)
+        break
+      case RequestType.UserList:
+        this.sendUserList(user)
+        break
+      case RequestType.SetUserPublicKey:
+      case RequestType.SetServerSharedKey:
+        // Legacy Java transport-encryption handshake. Deliberately not
+        // implemented (see PORTING-NOTES.md) — no-op rather than replying,
+        // so an old Java client's own fallback (stay plaintext) kicks in.
+        break
+      default:
+        break
+    }
+  }
+
+  private sendChannelList(user: UserRecord): void {
+    const channels = this.channels.listChannels()
+    user.peer.send({
+      channelList: {
+        channels: { values: channels.map((c) => c.name) },
+        channelMeta: channels.map((c) => ({ channel: c.name, e2eChannel: c.e2e }))
+      }
+    })
+  }
+
+  private sendChannelUserList(user: UserRecord, channelName: string): void {
+    const memberIds = this.channels.getUsersInChannel(channelName)
+    if (!memberIds) {
+      user.peer.send({
+        errorMessage: { errorType: ErrorType.ChannelDoesNotExist, additionalMessage: channelName }
+      })
+      return
+    }
+    const members = memberIds.map((id) => this.users.getById(id)).filter((u): u is UserRecord => !!u)
+    user.peer.send({
+      userList: { users: members.map(userToUserData), channel: channelName }
+    })
+  }
+
+  private sendUserList(user: UserRecord): void {
+    user.peer.send({ userList: { users: this.users.listNamed().map(userToUserData) } })
+  }
+
+  private handleSetUserName(user: UserRecord, newName: string): void {
+    if (newName.length === 0 || newName.length > MAX_NICKNAME_LENGTH) {
+      user.peer.send({
+        errorMessage: { errorType: ErrorType.UserNameInUse, additionalMessage: newName }
+      })
+      return
+    }
+
+    const wasRename = user.name !== null
+    const success = this.users.setName(user, newName)
+
+    if (!success) {
+      user.peer.send({
+        errorMessage: { errorType: ErrorType.UserNameInUse, additionalMessage: newName }
+      })
+      return
+    }
+
+    this.users.touchLastSeen(user)
+    if (!wasRename) {
+      this.broadcastToAll(userConnectionStatus(user, true))
+    }
+    user.peer.send({ notification: { userNameSet: { name: newName } } })
+  }
+
+  private handleSetE2EPublicKey(user: UserRecord, keyBytes: Uint8Array | undefined | null): void {
+    if (!keyBytes || keyBytes.length === 0) return
+    user.e2eIdentityKey = Buffer.from(keyBytes)
+  }
+
+  private handleChannelJoin(user: UserRecord, request: portochat.IRequest): void {
+    const channelName = request.stringRequestData?.value ?? ''
+    if (channelName.length === 0 || channelName.length > MAX_CHANNEL_NAME_LENGTH) {
+      user.peer.send({
+        errorMessage: { errorType: ErrorType.ChannelDoesNotExist, additionalMessage: channelName }
+      })
+      return
+    }
+
+    const requestedE2E = request.e2eChannel ?? false
+    const existingRecord = this.channels.get(channelName)
+    const channelIsE2E = existingRecord ? existingRecord.e2e : requestedE2E
+
+    if (channelIsE2E && !user.e2eIdentityKey) {
+      user.peer.send({
+        errorMessage: {
+          errorType: ErrorType.E2EChannelRequiresSupport,
+          additionalMessage: channelName
+        }
+      })
+      return
+    }
+
+    const { record, created } = this.channels.ensureChannel(channelName, requestedE2E)
+    if (created) {
+      this.broadcastToAll({
+        notification: { channelAdded: { channel: channelName, e2eChannel: record.e2e } }
+      })
+    }
+
+    this.channels.addUserToChannel(channelName, user.id)
+    this.broadcastToChannel(channelName, user.id, {
+      notification: { channelJoin: { channel: channelName, userId: user.id } }
+    })
+  }
+
+  // ---- Notification handling --------------------------------------------
+
+  private handleNotification(user: UserRecord, notification: portochat.INotification): void {
+    // `notification` here is typed as the plain INotification interface (a
+    // nested oneof field, not a decoded top-level message), so the
+    // `NotificationData` discriminant getter isn't available on the type —
+    // check field presence directly instead. ChannelPart is the only
+    // Notification variant a client ever sends to the server.
+    if (notification.channelPart) {
+      this.handleChannelPart(user, notification.channelPart.channel ?? '')
+    }
+  }
+
+  private handleChannelPart(user: UserRecord, channelName: string): void {
+    const result = this.channels.removeUserFromChannel(channelName, user.id)
+    if (result === 'not-a-member') return
+
+    if (result === 'channel-removed') {
+      this.broadcastToAll({ notification: { channelRemoved: { channel: channelName } } })
+      return
+    }
+
+    this.broadcastToChannel(channelName, user.id, {
+      notification: { channelPart: { channel: channelName, userId: user.id } }
+    })
+    this.triggerKeyRotationIfE2E(channelName)
+  }
+
+  /**
+   * The server never generates or holds channel keys — it only tracks that a
+   * rotation should happen and reports the new epoch number. The actual key
+   * regeneration and re-wrap-to-members happens client-side (see
+   * crypto/channelKeys.ts), triggered by this notification.
+   */
+  private triggerKeyRotationIfE2E(channelName: string): void {
+    const record = this.channels.get(channelName)
+    if (!record || !record.e2e) return
+    const keyEpoch = this.channels.bumpKeyEpoch(channelName)
+    if (keyEpoch === undefined) return
+    this.broadcastToChannel(channelName, null, {
+      notification: { keyRotationNotice: { channel: channelName, keyEpoch } }
+    })
+  }
+
+  // ---- Chat / keyshare relay ---------------------------------------------
+
+  private handleChatMessage(user: UserRecord, chatMessage: portochat.IChatMessage): void {
+    const message = (chatMessage.message ?? '').slice(0, MAX_MESSAGE_TEXT_LENGTH)
+    const ciphertext = chatMessage.e2eCiphertext
+    if (ciphertext && ciphertext.length > MAX_E2E_CIPHERTEXT_LENGTH) return
+
+    // Hardening beyond the original Java server: never trust a client's
+    // self-reported senderId — always stamp the authenticated user's own id.
+    const outgoing: portochat.IPortoChatMessage = {
+      chatMessage: { ...chatMessage, senderId: user.id, message }
+    }
+
+    if (chatMessage.isChannel) {
+      const channelName = chatMessage.destinationId ?? ''
+      if (
+        !this.channels.channelExists(channelName) ||
+        !this.channels.isUserInChannel(channelName, user.id)
+      ) {
+        user.peer.send({
+          errorMessage: {
+            errorType: ErrorType.ChannelDoesNotExist,
+            additionalMessage: channelName
+          }
+        })
+        return
+      }
+      this.broadcastToChannel(channelName, user.id, outgoing)
+    } else {
+      const destinationId = chatMessage.destinationId ?? ''
+      const recipient = this.users.getById(destinationId)
+      if (!recipient) {
+        user.peer.send({ notification: { userDoesNotExist: { missingId: destinationId } } })
+        return
+      }
+      recipient.peer.send(outgoing)
+    }
+  }
+
+  /** Relayed opaquely — this method must never inspect or decode wrappedKey. */
+  private handleKeyShare(user: UserRecord, keyShare: portochat.IKeyShare): void {
+    const recipient = this.users.getById(keyShare.toUserId ?? '')
+    if (!recipient) return
+    recipient.peer.send({ keyShare: { ...keyShare, fromUserId: user.id } })
+  }
+
+  // ---- Broadcast helpers ---------------------------------------------------
+
+  private broadcastToAll(message: portochat.IPortoChatMessage, exceptUserId?: string): void {
+    for (const user of this.users.listAllConnections()) {
+      if (user.id === exceptUserId) continue
+      user.peer.send(message)
+    }
+  }
+
+  private broadcastToChannel(
+    channelName: string,
+    exceptUserId: string | null,
+    message: portochat.IPortoChatMessage
+  ): void {
+    const memberIds = this.channels.getUsersInChannel(channelName) ?? []
+    for (const id of memberIds) {
+      if (id === exceptUserId) continue
+      const user = this.users.getById(id)
+      user?.peer.send(message)
+    }
+  }
+}
