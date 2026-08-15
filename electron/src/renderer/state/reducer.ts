@@ -24,7 +24,6 @@ export type Action =
   | { type: 'CLEAR_MESSAGES'; key: string }
   | { type: 'OPEN_CONVERSATION'; ref: ConversationRef }
   | { type: 'CLOSE_CONVERSATION'; ref: ConversationRef }
-  | { type: 'SET_ACTIVE_CONVERSATION'; ref: ConversationRef | null }
   | { type: 'NAME_RESULT'; success: boolean; name: string }
   | { type: 'GENERAL_ERROR'; message: string }
   | { type: 'CLEAR_GENERAL_ERROR' }
@@ -146,9 +145,6 @@ export function reducer(state: AppState, action: Action): AppState {
         activeConversation: wasActive ? (openConversations[0] ?? null) : state.activeConversation
       }
     }
-
-    case 'SET_ACTIVE_CONVERSATION':
-      return { ...state, activeConversation: action.ref }
 
     case 'NAME_RESULT':
       return {

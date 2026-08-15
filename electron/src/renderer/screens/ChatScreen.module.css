@@ -68,6 +68,20 @@
   flex: 1;
 }
 
+.leaveButton {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.leaveButton:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .emptyState {
   flex: 1;
   display: flex;

@@ -99,6 +99,17 @@ export function ChatScreen() {
                 </span>
                 <div className={styles.headerSpacer} />
                 <EncryptionBadge encrypted={encrypted} />
+                {active.type === 'channel' && (
+                  <button
+                    className={styles.leaveButton}
+                    onClick={() => {
+                      window.portochat.partChannel(active.name)
+                      dispatch({ type: 'CLOSE_CONVERSATION', ref: active })
+                    }}
+                  >
+                    Leave
+                  </button>
+                )}
               </div>
               {dmWarning && (
                 <KeyChangeWarningBanner
