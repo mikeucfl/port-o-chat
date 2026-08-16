@@ -106,10 +106,6 @@ export function ChatScreen() {
           ) : (
             <span>— no LAN network interface detected</span>
           )}
-          <span className={styles.hostBannerHint}>
-            LAN only — reaching this from the internet requires port forwarding, which
-            Port-O-Chat does not set up for you.
-          </span>
         </div>
       )}
       <div className={styles.layout}>
@@ -169,6 +165,7 @@ export function ChatScreen() {
                 messages={messages}
                 users={state.users}
                 myUserId={state.myUserId}
+                myNickname={state.myNickname}
                 firstUnreadMessageId={activeKey ? state.firstUnreadMessageId[activeKey] : undefined}
               />
               <Composer

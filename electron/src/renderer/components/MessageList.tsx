@@ -8,7 +8,7 @@ import styles from './MessageList.module.css'
 const GROUPING_WINDOW_MS = 5 * 60 * 1000
 
 function formatTime(ts: number): string {
-  return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
 }
 
 function isGroupedWithPrevious(current: ChatMessageDto, previous: ChatMessageDto | undefined): boolean {
@@ -41,11 +41,13 @@ export function MessageList({
   messages,
   users,
   myUserId,
+  myNickname,
   firstUnreadMessageId
 }: {
   messages: ChatMessageDto[]
   users: Record<string, UserDto>
   myUserId: string | null
+  myNickname: string
   /** clientMessageId of the first unread message, if any — renders a "New Messages" divider right before it. */
   firstUnreadMessageId?: string
 }) {
@@ -59,8 +61,11 @@ export function MessageList({
   return (
     <div className={styles.list}>
       {messages.map((message, i) => {
-        const senderName =
-          message.senderId === myUserId ? 'You' : (users[message.senderId]?.name ?? 'Unknown user')
+        const isMine = message.senderId === myUserId
+        const senderName = isMine ? 'You' : (users[message.senderId]?.name ?? 'Unknown user')
+        // Avatar initials/color always derive from the real name, even for
+        // your own messages — "You" would otherwise render as the initials "YO".
+        const avatarName = isMine ? myNickname || senderName : senderName
         const showsDivider = message.clientMessageId === firstUnreadMessageId
         // A divider always breaks message grouping — "New Messages" should
         // never sit in the middle of what looks like one continuous block.
@@ -84,7 +89,7 @@ export function MessageList({
                   className={styles.avatar}
                   style={{ background: avatarColorForUserId(message.senderId) }}
                 >
-                  {initials(senderName)}
+                  {initials(avatarName)}
                 </div>
                 <div className={styles.body}>
                   <div className={styles.metaLine}>

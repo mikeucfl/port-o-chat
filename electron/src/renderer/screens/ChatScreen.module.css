@@ -28,11 +28,6 @@
   border-radius: 4px;
 }
 
-.hostBannerHint {
-  color: var(--text-secondary);
-  margin-left: auto;
-}
-
 .layout {
   flex: 1;
   min-height: 0;
