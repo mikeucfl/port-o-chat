@@ -407,6 +407,106 @@ describe('ChatRouter', () => {
     })
   })
 
+  describe('join password', () => {
+    it('accepts any (or no) password when the server has none set', () => {
+      const peer = new FakePeer()
+      const user = router.handleConnect(peer, '127.0.0.1')
+      router.handleMessage(
+        peer,
+        msg({ request: { requestType: RequestType.SetJoinPassword, stringRequestData: { value: '' } } })
+      )
+      expect(peer.last()?.notification?.passwordAccepted).toBeDefined()
+
+      router.handleMessage(
+        peer,
+        msg({ request: { requestType: RequestType.SetUserName, stringRequestData: { value: 'alice' } } })
+      )
+      expect(peer.last()?.notification?.userNameSet?.name).toBe('alice')
+      void user
+    })
+
+    it('accepts SetUserName only after a matching SetJoinPassword', () => {
+      router.setPassword('hunter2')
+      const peer = new FakePeer()
+      router.handleConnect(peer, '127.0.0.1')
+
+      router.handleMessage(
+        peer,
+        msg({ request: { requestType: RequestType.SetUserName, stringRequestData: { value: 'alice' } } })
+      )
+      expect(peer.last()?.errorMessage?.errorType).toBe(ErrorType.IncorrectPassword)
+
+      router.handleMessage(
+        peer,
+        msg({
+          request: { requestType: RequestType.SetJoinPassword, stringRequestData: { value: 'hunter2' } }
+        })
+      )
+      expect(peer.last()?.notification?.passwordAccepted).toBeDefined()
+
+      router.handleMessage(
+        peer,
+        msg({ request: { requestType: RequestType.SetUserName, stringRequestData: { value: 'alice' } } })
+      )
+      expect(peer.last()?.notification?.userNameSet?.name).toBe('alice')
+    })
+
+    it('rejects a wrong password and never registers the user', () => {
+      router.setPassword('hunter2')
+      const peer = new FakePeer()
+      router.handleConnect(peer, '127.0.0.1')
+
+      router.handleMessage(
+        peer,
+        msg({
+          request: { requestType: RequestType.SetJoinPassword, stringRequestData: { value: 'wrong' } }
+        })
+      )
+      expect(peer.last()?.errorMessage?.errorType).toBe(ErrorType.IncorrectPassword)
+
+      router.handleMessage(
+        peer,
+        msg({ request: { requestType: RequestType.SetUserName, stringRequestData: { value: 'alice' } } })
+      )
+      expect(peer.last()?.errorMessage?.errorType).toBe(ErrorType.IncorrectPassword)
+      expect(users.isNameInUse('alice')).toBe(false)
+    })
+
+    it('a live password change only gates future joins — an already-connected user is not kicked or re-challenged', () => {
+      const alice = connectAndName('alice') // joined while there was no password
+      router.setPassword('hunter2')
+
+      // alice can keep chatting without ever submitting the new password.
+      router.handleMessage(
+        alice.peer,
+        msg({ request: { requestType: RequestType.ChannelJoin, stringRequestData: { value: '#general' } } })
+      )
+      expect(channels.isUserInChannel('#general', alice.user.id)).toBe(true)
+
+      // A new joiner, meanwhile, is gated by it.
+      const bobPeer = new FakePeer()
+      router.handleConnect(bobPeer, '127.0.0.1')
+      router.handleMessage(
+        bobPeer,
+        msg({ request: { requestType: RequestType.SetUserName, stringRequestData: { value: 'bob' } } })
+      )
+      expect(bobPeer.last()?.errorMessage?.errorType).toBe(ErrorType.IncorrectPassword)
+    })
+
+    it('clearing the password (empty string) removes the gate again', () => {
+      router.setPassword('hunter2')
+      router.setPassword('')
+      const peer = new FakePeer()
+      router.handleConnect(peer, '127.0.0.1')
+
+      router.handleMessage(
+        peer,
+        msg({ request: { requestType: RequestType.SetUserName, stringRequestData: { value: 'alice' } } })
+      )
+      expect(peer.last()?.notification?.userNameSet?.name).toBe('alice')
+    })
+  })
+
   describe('channel topics (creator-only)', () => {
     it('lets the creator set the topic and broadcasts it to everyone', () => {
       const alice = connectAndName('alice')

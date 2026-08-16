@@ -82,6 +82,11 @@ message ErrorMessage {
         // New: returned when a client tries an action reserved for a
         // channel's creator (currently: setting the topic) and isn't one.
         NotAuthorized = 3;
+        // New: returned when a server has a join password set and the
+        // client's SetJoinPassword attempt didn't match (or none was ever
+        // sent). SetUserName is refused with this same error until a
+        // matching password is submitted.
+        IncorrectPassword = 4;
     }
     ErrorType errorType = 1;
     string additionalMessage = 2;
@@ -100,6 +105,11 @@ message Request {
         // for distribution to other users. Distinct from the legacy
         // SetUserPublicKey (RSA, transport-only) above.
         SetE2EPublicKey = 7;
+        // New: client's attempt at the server's join password (empty string
+        // if it doesn't have one to offer). Sent before SetUserName; the
+        // server refuses SetUserName with IncorrectPassword until this
+        // matches (or the server has no password set at all).
+        SetJoinPassword = 8;
     }
     string requestId = 1;
     RequestType requestType = 2;
@@ -134,6 +144,11 @@ message Notification {
         // rotated (a member departed) and a new epoch is in effect. Carries
         // no key material itself — the actual key arrives via KeyShare.
         KeyRotationNotice keyRotationNotice = 8;
+        // New: sent in direct reply to a SetJoinPassword request that
+        // matched (or the server has no password set). Carries no data —
+        // its presence alone tells the client it's safe to proceed to
+        // SetUserName.
+        PasswordAccepted passwordAccepted = 9;
     }
 }
 
@@ -226,4 +241,8 @@ message KeyShare {
 message KeyRotationNotice {
     string channel = 1;
     uint32 keyEpoch = 2;
+}
+
+// Empty payload — see Notification.passwordAccepted above.
+message PasswordAccepted {
 }

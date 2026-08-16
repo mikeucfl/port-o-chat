@@ -11,6 +11,7 @@ import type {
   ErrorEvent,
   IdentityEvent,
   NameResultEvent,
+  PasswordResultEvent,
   PeerKeyChangedEvent,
   SendMessageParams,
   UserConnectionStatusEvent,
@@ -67,8 +68,10 @@ export function createBrowserApi(): PortochatApi {
     hostStart: () =>
       Promise.reject(new Error('This build cannot host — a browser tab can never bind a listening socket.')),
     hostStop: () => Promise.resolve(),
+    hostSetPassword: () =>
+      Promise.reject(new Error('This build cannot host — a browser tab can never bind a listening socket.')),
 
-    clientConnect: (host: string, port: number, nickname: string) => chat.connect(host, port, nickname),
+    clientConnect: (host: string, port: number, password: string) => chat.connect(host, port, password),
     clientDisconnect: () => {
       chat.disconnect()
       return Promise.resolve()
@@ -133,6 +136,7 @@ export function createBrowserApi(): PortochatApi {
     onUserConnectionStatus: (cb: (e: UserConnectionStatusEvent) => void) =>
       subscribe(IPC_EVENT.userConnectionStatus, cb),
     onNameResult: (cb: (e: NameResultEvent) => void) => subscribe(IPC_EVENT.nameResult, cb),
+    onPasswordResult: (cb: (e: PasswordResultEvent) => void) => subscribe(IPC_EVENT.passwordResult, cb),
     onError: (cb: (e: ErrorEvent) => void) => subscribe(IPC_EVENT.errorGeneric, cb),
     onPeerKeyChanged: (cb: (e: PeerKeyChangedEvent) => void) => subscribe(IPC_EVENT.peerKeyChanged, cb),
     onChannelKeyRotated: (cb: (e: ChannelKeyRotatedEvent) => void) =>

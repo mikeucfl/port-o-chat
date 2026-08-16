@@ -9,6 +9,7 @@ import type {
   ErrorEvent,
   IdentityEvent,
   NameResultEvent,
+  PasswordResultEvent,
   PeerKeyChangedEvent,
   SendMessageParams,
   UserConnectionStatusEvent,
@@ -71,7 +72,16 @@ export class ChatController {
 
   // ---- connection -------------------------------------------------------
 
-  async connect(host: string, port: number, nickname: string): Promise<void> {
+  /**
+   * Establishes the session and submits host/port + the join password
+   * (empty string if none) — does NOT register a username. Callers choose
+   * how to sequence the rest: fire setNickname() right after for a
+   * single-shot flow and react to onPasswordResult/onNameResult failures
+   * (the Electron desktop client), or await a passwordResult event before
+   * ever prompting for a nickname (the browser client) — see
+   * PORTING-NOTES.md for why the two flows differ.
+   */
+  async connect(host: string, port: number, password: string): Promise<void> {
     this.session?.disconnect()
     this.roster.clear()
     this.channelMembers.clear()
@@ -96,7 +106,7 @@ export class ChatController {
       session.requestUserList()
     })
 
-    await session.connect(host, port, nickname, this.deps.crypto.identityPublicKey)
+    await session.connect(host, port, this.deps.crypto.identityPublicKey, password)
   }
 
   disconnect(): void {
@@ -426,6 +436,10 @@ export class ChatController {
       })
       return
     }
+    if (errorMessage.errorType === ErrorType.IncorrectPassword) {
+      this.send<PasswordResultEvent>(IPC_EVENT.passwordResult, { success: false })
+      return
+    }
     const message =
       errorMessage.errorType === ErrorType.E2EChannelRequiresSupport
         ? `"${errorMessage.additionalMessage}" is an encrypted channel and requires an E2E-capable client.`
@@ -438,6 +452,11 @@ export class ChatController {
   private handleNotification(notification: portochat.INotification | null | undefined): void {
     if (!notification) return
     const myUserId = this.session?.userId
+
+    if (notification.passwordAccepted) {
+      this.send<PasswordResultEvent>(IPC_EVENT.passwordResult, { success: true })
+      return
+    }
 
     if (notification.channelJoin) {
       const { channel, userId } = notification.channelJoin

@@ -2,16 +2,28 @@ import { useEffect, useState } from 'react'
 import { DEFAULT_SERVER_PORT, MAX_NICKNAME_LENGTH } from '@shared/constants'
 import { useStore } from '../state/store'
 import styles from './AuthLayout.module.css'
+import { BrowserJoinScreen } from './BrowserJoinScreen'
 
 export function JoinSetupScreen() {
   const { state, dispatch } = useStore()
   // A browser tab can only ever join the server that served its own page —
-  // host/port are prefilled from the page's own origin (see web/config.ts)
-  // and can't usefully be changed, so this screen doesn't show them there.
-  const canHost = window.portochat.capabilities.canHost
+  // it gets a structurally different (password-then-nickname) flow, since
+  // it can't usefully show host/port fields at all. See PORTING-NOTES.md.
+  if (!window.portochat.capabilities.canHost) {
+    return <BrowserJoinScreen />
+  }
+
+  return <DesktopJoinForm state={state} dispatch={dispatch} />
+}
+
+function DesktopJoinForm({
+  state,
+  dispatch
+}: Pick<ReturnType<typeof useStore>, 'state' | 'dispatch'>) {
   const [nickname, setNickname] = useState('')
   const [host, setHost] = useState('')
   const [port, setPort] = useState(String(DEFAULT_SERVER_PORT))
+  const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -23,14 +35,18 @@ export function JoinSetupScreen() {
     })
   }, [])
 
-  // Surfaces a nickname-in-use rejection back onto this screen — a TCP
-  // connect succeeding doesn't mean the server accepted the nickname.
+  // Surfaces a nickname-in-use or incorrect-password rejection back onto
+  // this screen — a WS connect succeeding doesn't mean either was accepted.
   useEffect(() => {
-    if (busy && state.nameError) {
+    if (!busy) return
+    if (state.passwordError) {
+      setError(state.passwordError)
+      setBusy(false)
+    } else if (state.nameError) {
       setError(state.nameError)
       setBusy(false)
     }
-  }, [state.nameError, busy])
+  }, [state.nameError, state.passwordError, busy])
 
   async function handleJoin(): Promise<void> {
     const trimmedName = nickname.trim()
@@ -52,7 +68,8 @@ export function JoinSetupScreen() {
     setBusy(true)
     setError(null)
     try {
-      await window.portochat.clientConnect(trimmedHost, portNumber, trimmedName)
+      await window.portochat.clientConnect(trimmedHost, portNumber, password)
+      await window.portochat.setNickname(trimmedName)
       await window.portochat.setConfig({
         lastNickname: trimmedName,
         lastHost: trimmedHost,
@@ -67,19 +84,16 @@ export function JoinSetupScreen() {
   return (
     <div className={styles.page}>
       <div className={styles.card}>
-        {canHost && (
-          <button
-            className={styles.backLink}
-            onClick={() => dispatch({ type: 'SET_PHASE', phase: 'launch' })}
-          >
-            ← Back
-          </button>
-        )}
-        <h1 className={styles.title}>{canHost ? 'Join a server' : 'Join this chat'}</h1>
+        <button
+          className={styles.backLink}
+          onClick={() => dispatch({ type: 'SET_PHASE', phase: 'launch' })}
+        >
+          ← Back
+        </button>
+        <h1 className={styles.title}>Join a server</h1>
         <p className={styles.subtitle}>
-          {canHost
-            ? 'Connect to a Port-O-Chat server already running on your local network — one hosted by this app, or by the browser-based client.'
-            : 'Pick a nickname to join.'}
+          Connect to a Port-O-Chat server already running on your local network — one hosted by
+          this app, or by the browser-based client.
         </p>
 
         <div className={styles.field}>
@@ -97,35 +111,48 @@ export function JoinSetupScreen() {
           />
         </div>
 
-        {canHost && (
-          <div className={styles.row}>
-            <div className={styles.field}>
-              <label className={styles.label} htmlFor="host">
-                Server address
-              </label>
-              <input
-                id="host"
-                className={styles.input}
-                value={host}
-                placeholder="192.168.1.42"
-                onChange={(e) => setHost(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
-              />
-            </div>
-            <div className={styles.field} style={{ maxWidth: 110 }}>
-              <label className={styles.label} htmlFor="port">
-                Port
-              </label>
-              <input
-                id="port"
-                className={styles.input}
-                value={port}
-                onChange={(e) => setPort(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
-              />
-            </div>
+        <div className={styles.row}>
+          <div className={styles.field}>
+            <label className={styles.label} htmlFor="host">
+              Server address
+            </label>
+            <input
+              id="host"
+              className={styles.input}
+              value={host}
+              placeholder="192.168.1.42"
+              onChange={(e) => setHost(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
+            />
           </div>
-        )}
+          <div className={styles.field} style={{ maxWidth: 110 }}>
+            <label className={styles.label} htmlFor="port">
+              Port
+            </label>
+            <input
+              id="port"
+              className={styles.input}
+              value={port}
+              onChange={(e) => setPort(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
+            />
+          </div>
+        </div>
+
+        <div className={styles.field}>
+          <label className={styles.label} htmlFor="join-password">
+            Password <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(if required)</span>
+          </label>
+          <input
+            id="join-password"
+            type="password"
+            className={styles.input}
+            value={password}
+            placeholder="Leave blank if none"
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
+          />
+        </div>
 
         <button className={styles.primaryButton} onClick={handleJoin} disabled={busy}>
           {busy ? 'Connecting…' : 'Join'}

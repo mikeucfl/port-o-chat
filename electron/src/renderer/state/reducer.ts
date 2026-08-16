@@ -34,6 +34,7 @@ export type Action =
   | { type: 'OPEN_CONVERSATION'; ref: ConversationRef }
   | { type: 'CLOSE_CONVERSATION'; ref: ConversationRef }
   | { type: 'NAME_RESULT'; success: boolean; name: string }
+  | { type: 'PASSWORD_RESULT'; success: boolean }
   | { type: 'GENERAL_ERROR'; message: string }
   | { type: 'CLEAR_GENERAL_ERROR' }
   | { type: 'PEER_KEY_CHANGED'; event: PeerKeyChangedEvent }
@@ -221,6 +222,13 @@ export function reducer(state: AppState, action: Action): AppState {
         nameError: action.success ? null : `"${action.name}" is already taken.`,
         phase: action.success ? 'chat' : state.phase
       }
+
+    case 'PASSWORD_RESULT':
+      // Deliberately does not touch `phase` — unlike NAME_RESULT, a
+      // successful password isn't "you're in the chat," it's just "you're
+      // clear to try a username now" (see ChatController.connect's
+      // docstring for why the two are separate steps).
+      return { ...state, passwordError: action.success ? null : 'Incorrect password.' }
 
     case 'GENERAL_ERROR':
       return { ...state, generalError: action.message }

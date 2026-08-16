@@ -69,6 +69,10 @@ export interface NameResultEvent {
   name: string
 }
 
+export interface PasswordResultEvent {
+  success: boolean
+}
+
 export interface ErrorEvent {
   message: string
 }

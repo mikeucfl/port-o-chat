@@ -52,6 +52,7 @@ export interface AppState {
   peerKeyWarnings: Record<string, PeerKeyChangedEvent>
   channelKeyEpochs: Record<string, number>
   nameError: string | null
+  passwordError: string | null
   generalError: string | null
   /** conversationKey -> count of messages received while not being actively viewed. */
   unreadCounts: Record<string, number>
@@ -81,6 +82,7 @@ export const initialState: AppState = {
   peerKeyWarnings: {},
   channelKeyEpochs: {},
   nameError: null,
+  passwordError: null,
   generalError: null,
   unreadCounts: {},
   firstUnreadMessageId: {},

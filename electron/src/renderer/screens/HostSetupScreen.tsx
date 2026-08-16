@@ -7,6 +7,9 @@ export function HostSetupScreen() {
   const { state, dispatch } = useStore()
   const [nickname, setNickname] = useState('')
   const [port, setPort] = useState(String(DEFAULT_SERVER_PORT))
+  // Not persisted to config (unlike nickname/host/port) — a join password
+  // is a credential, not a preference to remember across launches.
+  const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Set once the server actually binds, so a nickname retry after a
@@ -47,11 +50,14 @@ export function HostSetupScreen() {
     setError(null)
     try {
       if (boundPortRef.current === null) {
-        const result = await window.portochat.hostStart(portNumber)
+        const result = await window.portochat.hostStart(portNumber, password)
         boundPortRef.current = result.port
         dispatch({ type: 'HOST_INFO', port: result.port, lanAddresses: result.lanAddresses })
       }
-      await window.portochat.clientConnect('127.0.0.1', boundPortRef.current, trimmedName)
+      // The host authenticates to its own server with the same password it
+      // just set — no separate prompt for yourself.
+      await window.portochat.clientConnect('127.0.0.1', boundPortRef.current, password)
+      await window.portochat.setNickname(trimmedName)
       await window.portochat.setConfig({ lastNickname: trimmedName, lastPort: boundPortRef.current })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not start the server.')
@@ -99,6 +105,23 @@ export function HostSetupScreen() {
             value={port}
             disabled={boundPortRef.current !== null}
             onChange={(e) => setPort(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleStart()}
+          />
+        </div>
+
+        <div className={styles.field}>
+          <label className={styles.label} htmlFor="password">
+            Password{' '}
+            <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span>
+          </label>
+          <input
+            id="password"
+            type="password"
+            className={styles.input}
+            value={password}
+            disabled={boundPortRef.current !== null}
+            placeholder="Leave blank for no password"
+            onChange={(e) => setPassword(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleStart()}
           />
         </div>

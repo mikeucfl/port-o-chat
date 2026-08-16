@@ -47,16 +47,25 @@ function userConnectionStatus(user: UserRecord, connected: boolean): portochat.I
  * actually a member of that channel.
  */
 export class ChatRouter {
+  /** Null = no password required. Set/changed live via setPassword — see ipc/handlers.ts's hostSetPassword. */
+  private password: string | null = null
+  private readonly passwordVerifiedPeers = new Set<PeerConnection>()
+
   constructor(
     private readonly users: UserRegistry,
     private readonly channels: ChannelRegistry
   ) {}
+
+  setPassword(password: string | null): void {
+    this.password = password && password.length > 0 ? password : null
+  }
 
   handleConnect(peer: PeerConnection, host: string): UserRecord {
     return this.users.addConnection(peer, host)
   }
 
   handleDisconnect(peer: PeerConnection): void {
+    this.passwordVerifiedPeers.delete(peer)
     const user = this.users.removeConnection(peer)
     if (!user) return
 
@@ -128,6 +137,9 @@ export class ChatRouter {
       case RequestType.SetE2EPublicKey:
         this.handleSetE2EPublicKey(user, request.byteData)
         break
+      case RequestType.SetJoinPassword:
+        this.handleSetJoinPassword(user, request.stringRequestData?.value ?? '')
+        break
       case RequestType.UserList:
         this.sendUserList(user)
         break
@@ -177,6 +189,11 @@ export class ChatRouter {
   }
 
   private handleSetUserName(user: UserRecord, newName: string): void {
+    if (this.password !== null && !this.passwordVerifiedPeers.has(user.peer)) {
+      user.peer.send({ errorMessage: { errorType: ErrorType.IncorrectPassword } })
+      return
+    }
+
     if (newName.length === 0 || newName.length > MAX_NICKNAME_LENGTH) {
       user.peer.send({
         errorMessage: { errorType: ErrorType.UserNameInUse, additionalMessage: newName }
@@ -209,6 +226,24 @@ export class ChatRouter {
   private handleSetE2EPublicKey(user: UserRecord, keyBytes: Uint8Array | undefined | null): void {
     if (!keyBytes || keyBytes.length === 0) return
     user.e2eIdentityKey = Buffer.from(keyBytes)
+  }
+
+  /**
+   * A password change only ever gates *future* SetUserName attempts on
+   * *new* connections — an already-registered user is never kicked or
+   * re-challenged retroactively when the host changes the password while
+   * running. Sent before SetUserName, so a not-yet-named peer's own
+   * PeerConnection identity is enough to key passwordVerifiedPeers by
+   * (UserRegistry already tracks a connection from accept time, before any
+   * name is set — see handleConnect).
+   */
+  private handleSetJoinPassword(user: UserRecord, attempt: string): void {
+    if (this.password === null || attempt === this.password) {
+      this.passwordVerifiedPeers.add(user.peer)
+      user.peer.send({ notification: { passwordAccepted: {} } })
+      return
+    }
+    user.peer.send({ errorMessage: { errorType: ErrorType.IncorrectPassword } })
   }
 
   /**

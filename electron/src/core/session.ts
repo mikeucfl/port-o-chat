@@ -77,13 +77,20 @@ export class ChatSession extends TypedEmitter<SessionEvents> {
     }
   }
 
+  /**
+   * Establishes the transport and announces identity/password, but does
+   * NOT set a username — that's a separate call to setUsername() below,
+   * unified with the rename path so callers can choose to wait for the
+   * server's verdict on the password (SetJoinPassword) before ever showing
+   * a nickname prompt, or fire both in quick succession and handle
+   * rejection reactively — see ChatController and PORTING-NOTES.md.
+   */
   async connect(
     host: string,
     port: number,
-    username: string,
-    e2eIdentityPublicKey: Buffer | null
+    e2eIdentityPublicKey: Buffer | null,
+    password: string
   ): Promise<void> {
-    this.myUsername = username
     await this.client.connect(host, port)
     if (e2eIdentityPublicKey) {
       this.client.send({
@@ -91,7 +98,7 @@ export class ChatSession extends TypedEmitter<SessionEvents> {
       })
     }
     this.client.send({
-      request: { requestType: RequestType.SetUserName, stringRequestData: { value: username } }
+      request: { requestType: RequestType.SetJoinPassword, stringRequestData: { value: password } }
     })
   }
 

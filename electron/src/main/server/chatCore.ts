@@ -22,6 +22,11 @@ export class ChatCore {
     this.keepalive.start()
   }
 
+  /** Null clears it. A live change only gates future SetUserName attempts — it never kicks anyone already connected. */
+  setPassword(password: string | null): void {
+    this.router.setPassword(password)
+  }
+
   stop(): void {
     this.keepalive.stop()
   }

@@ -143,6 +143,7 @@ Carries both channel messages and DMs.
 | `ChannelDoesNotExist` | 1 | Inherited. Also now returned when a channel message is sent by a non-member (the Java server didn't check membership) |
 | `E2EChannelRequiresSupport` | 2 | **(new)** Returned when a client without an E2E identity key tries to join a channel that's flagged end-to-end encrypted |
 | `NotAuthorized` | 3 | **(new)** Returned when a client tries to set a channel's topic and isn't that channel's creator |
+| `IncorrectPassword` | 4 | **(new)** Returned in reply to a `SetJoinPassword` that didn't match, and to any `SetUserName` attempt before a matching password has been submitted (if the server has one set at all). |
 
 `additionalMessage` (field 2) carries context (the name/id in question).
 
@@ -158,6 +159,7 @@ Carries both channel messages and DMs.
 | `SetUserPublicKey` | 5 | C→S | Legacy transport handshake — this app's client never sends it. This app's **server replies** to it (see above) rather than ignoring it. |
 | `UserList` | 6 | C→S | Inherited |
 | `SetE2EPublicKey` | 7 | C→S | **(new)** `byteData` = raw 32-byte X25519 identity public key. Sent once, immediately after connecting, before `SetUserName`. |
+| `SetJoinPassword` | 8 | C→S | **(new)** `stringRequestData` = the client's password attempt (empty string if it has none to offer). Sent once, right after connecting — before `SetUserName`, which the server refuses with `IncorrectPassword` until this matches (or the server has no password set at all). The client doesn't need to wait for a reply before sending `SetUserName`; the server independently gates it either way. |
 
 `Request.e2eChannel` (field 5, bool) — **(new)**. Only meaningful on a
 `ChannelJoin` that creates a brand-new channel: declares it end-to-end
@@ -176,6 +178,7 @@ exists — the flag is immutable after creation.
 | `userDoesNotExist` | 6 | S→C | `{user, missingId}` — `missingId` is **(new)**; `user` is left empty in this app (see PORTING-NOTES.md for the Java bug this replaces) |
 | `userNameSet` | 7 | S→C | `{name}` — confirms a name was accepted |
 | `keyRotationNotice` | 8 | S→C (broadcast to remaining channel members) | **(new)** `{channel, keyEpoch}` — no key material, just tells clients a rotation happened; see CRYPTO.md |
+| `passwordAccepted` | 9 | S→C | **(new)** Empty payload, sent in direct reply to a `SetJoinPassword` that matched (or the server has no password set) — its presence alone tells the client it's clear to send `SetUserName`. |
 
 Note: unlike the Java client, this app never sends an explicit disconnect
 notification — the server detects disconnection from the TCP socket closing,

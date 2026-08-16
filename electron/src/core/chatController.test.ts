@@ -90,7 +90,8 @@ async function connected(userId = 'me-id', nickname = 'tester', crypto: CryptoPr
     createTransport: () => transport,
     emit: (channel, payload) => events.push({ channel, payload })
   })
-  await controller.connect('127.0.0.1', 3456, nickname)
+  await controller.connect('127.0.0.1', 3456, '')
+  controller.setNickname(nickname)
   // The server never tells a client its own id directly — it's inferred
   // from a UserList/UserConnectionStatus broadcast naming it, same as the
   // real ChatSession does.

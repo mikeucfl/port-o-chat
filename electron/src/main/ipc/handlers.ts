@@ -61,11 +61,11 @@ export class SessionController {
 
   // ---- host -----------------------------------------------------------------
 
-  async hostStart(port: number): Promise<HostStartResult> {
+  async hostStart(port: number, password?: string): Promise<HostStartResult> {
     if (this.hostServer) {
       throw new Error('A server is already running in this app instance')
     }
-    const server = new HostServer({ webRoot: WEB_ROOT })
+    const server = new HostServer({ webRoot: WEB_ROOT, password })
     const { port: boundPort } = await server.listen(port)
     this.hostServer = server
     return { port: boundPort, lanAddresses: getLanIPv4Addresses() }
@@ -76,10 +76,14 @@ export class SessionController {
     this.hostServer = null
   }
 
+  hostSetPassword(password: string): void {
+    this.hostServer?.core.setPassword(password || null)
+  }
+
   // ---- client ---------------------------------------------------------------
 
-  async clientConnect(host: string, port: number, nickname: string): Promise<void> {
-    await this.chat.connect(host, port, nickname)
+  async clientConnect(host: string, port: number, password: string): Promise<void> {
+    await this.chat.connect(host, port, password)
   }
 
   clientDisconnect(): void {
@@ -163,11 +167,16 @@ export function registerIpcHandlers(controller: SessionController): void {
   ipcMain.handle(IPC_INVOKE.getConfig, () => controller.getConfig())
   ipcMain.handle(IPC_INVOKE.setConfig, (_e, patch: AppConfig) => controller.setConfig(patch))
 
-  ipcMain.handle(IPC_INVOKE.hostStart, (_e, port: number) => controller.hostStart(port))
+  ipcMain.handle(IPC_INVOKE.hostStart, (_e, port: number, password?: string) =>
+    controller.hostStart(port, password)
+  )
   ipcMain.handle(IPC_INVOKE.hostStop, () => controller.hostStop())
+  ipcMain.handle(IPC_INVOKE.hostSetPassword, (_e, password: string) =>
+    controller.hostSetPassword(password)
+  )
 
-  ipcMain.handle(IPC_INVOKE.clientConnect, (_e, host: string, port: number, nickname: string) =>
-    controller.clientConnect(host, port, nickname)
+  ipcMain.handle(IPC_INVOKE.clientConnect, (_e, host: string, port: number, password: string) =>
+    controller.clientConnect(host, port, password)
   )
   ipcMain.handle(IPC_INVOKE.clientDisconnect, () => controller.clientDisconnect())
 

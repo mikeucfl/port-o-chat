@@ -3,6 +3,7 @@ import { ChannelTopicBar } from '../components/ChannelTopicBar'
 import { Composer } from '../components/Composer'
 import { EncryptionBadge } from '../components/EncryptionBadge'
 import { FingerprintDialog } from '../components/FingerprintDialog'
+import { HostPasswordDialog } from '../components/HostPasswordDialog'
 import { KeyChangeWarningBanner } from '../components/KeyChangeWarningBanner'
 import { MemberList } from '../components/MemberList'
 import { MessageList } from '../components/MessageList'
@@ -18,6 +19,7 @@ export function ChatScreen() {
     null
   )
   const [toast, setToast] = useState<string | null>(null)
+  const [showHostPassword, setShowHostPassword] = useState(false)
   // Session-only (never persisted, matching the app's zero-persistence
   // stance): which peers we've already nudged to verify their safety
   // number, so the prompt shows once per DM per session rather than every
@@ -106,8 +108,18 @@ export function ChatScreen() {
           ) : (
             <span>— no LAN network interface detected</span>
           )}
+          <button
+            className={styles.hostSettingsButton}
+            title="Change server password"
+            aria-label="Change server password"
+            onClick={() => setShowHostPassword(true)}
+          >
+            ⚙️
+          </button>
         </div>
       )}
+
+      {showHostPassword && <HostPasswordDialog onClose={() => setShowHostPassword(false)} />}
       <div className={styles.layout}>
         <Sidebar onOpenFingerprint={openFingerprint} />
 

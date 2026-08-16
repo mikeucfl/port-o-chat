@@ -86,4 +86,31 @@ describe('WsClient + HostServer (real sockets)', () => {
     await expect(client.connect('127.0.0.1', 1)).rejects.toThrow()
     expect(client.getState()).toBe('disconnected')
   })
+
+  it('a password-protected server refuses SetUserName until the right password is submitted', async () => {
+    const server = new HostServer({ webRoot: '/nonexistent-web-root-for-tests', password: 'hunter2' })
+    servers.push(server)
+    const { port } = await server.listen(0, '127.0.0.1')
+
+    const client = new WsClient()
+    clients.push(client)
+    await client.connect('127.0.0.1', port)
+
+    // Skips the password entirely and goes straight for a username, same
+    // as a hostile or buggy client might.
+    const rejected = waitForMessage(client, (m) => !!m.errorMessage)
+    client.send({ request: { requestType: RequestType.SetUserName, stringRequestData: { value: 'alice' } } })
+    const errorMsg = await rejected
+    expect(errorMsg.errorMessage?.errorType).toBe(portochat.ErrorMessage.ErrorType.IncorrectPassword)
+
+    const accepted = waitForMessage(client, (m) => !!m.notification?.passwordAccepted)
+    client.send({
+      request: { requestType: RequestType.SetJoinPassword, stringRequestData: { value: 'hunter2' } }
+    })
+    await accepted
+
+    const named = waitForMessage(client, (m) => !!m.notification?.userNameSet)
+    client.send({ request: { requestType: RequestType.SetUserName, stringRequestData: { value: 'alice' } } })
+    expect((await named).notification?.userNameSet?.name).toBe('alice')
+  })
 })

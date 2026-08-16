@@ -39,6 +39,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       api.onUserList((users, channel) => dispatch({ type: 'USER_LIST', users, channel })),
       api.onUserConnectionStatus((event) => dispatch({ type: 'USER_CONNECTION_STATUS', event })),
       api.onNameResult((event) => dispatch({ type: 'NAME_RESULT', ...event })),
+      api.onPasswordResult((event) => dispatch({ type: 'PASSWORD_RESULT', ...event })),
       api.onError((event) => dispatch({ type: 'GENERAL_ERROR', message: event.message })),
       api.onPeerKeyChanged((event) => dispatch({ type: 'PEER_KEY_CHANGED', event })),
       api.onChannelKeyRotated((event) =>

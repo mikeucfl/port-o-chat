@@ -10,6 +10,7 @@ import type {
   HostStartResult,
   IdentityEvent,
   NameResultEvent,
+  PasswordResultEvent,
   PeerKeyChangedEvent,
   SendMessageParams,
   UserConnectionStatusEvent,
@@ -29,10 +30,13 @@ export interface PortochatApi {
   getConfig(): Promise<AppConfig>
   setConfig(patch: Partial<AppConfig>): Promise<void>
 
-  hostStart(port: number): Promise<HostStartResult>
+  hostStart(port: number, password?: string): Promise<HostStartResult>
   hostStop(): Promise<void>
+  /** Changes (or clears, with an empty string) the running server's join password. Only ever affects future join attempts — never kicks anyone already connected. */
+  hostSetPassword(password: string): Promise<void>
 
-  clientConnect(host: string, port: number, nickname: string): Promise<void>
+  /** Establishes the session and submits a join password (empty string if none) — does NOT register a username; call setNickname separately once ready (see onPasswordResult). */
+  clientConnect(host: string, port: number, password: string): Promise<void>
   clientDisconnect(): Promise<void>
 
   sendMessage(params: SendMessageParams): Promise<void>
@@ -62,6 +66,7 @@ export interface PortochatApi {
   onUserList(cb: (users: UserDto[], channel?: string) => void): () => void
   onUserConnectionStatus(cb: (e: UserConnectionStatusEvent) => void): () => void
   onNameResult(cb: (e: NameResultEvent) => void): () => void
+  onPasswordResult(cb: (e: PasswordResultEvent) => void): () => void
   onError(cb: (e: ErrorEvent) => void): () => void
   onPeerKeyChanged(cb: (e: PeerKeyChangedEvent) => void): () => void
   onChannelKeyRotated(cb: (e: ChannelKeyRotatedEvent) => void): () => void
@@ -73,6 +78,7 @@ export const IPC_INVOKE = {
   setConfig: 'app:setConfig',
   hostStart: 'host:start',
   hostStop: 'host:stop',
+  hostSetPassword: 'host:setPassword',
   clientConnect: 'client:connect',
   clientDisconnect: 'client:disconnect',
   sendMessage: 'chat:sendMessage',
@@ -101,6 +107,7 @@ export const IPC_EVENT = {
   userList: 'user:list',
   userConnectionStatus: 'user:connectionStatus',
   nameResult: 'user:nameResult',
+  passwordResult: 'user:passwordResult',
   errorGeneric: 'error:generic',
   peerKeyChanged: 'crypto:peerKeyChanged',
   channelKeyRotated: 'crypto:channelKeyRotated'

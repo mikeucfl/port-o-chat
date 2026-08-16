@@ -11,6 +11,7 @@ import type {
   ErrorEvent,
   IdentityEvent,
   NameResultEvent,
+  PasswordResultEvent,
   PeerKeyChangedEvent,
   SendMessageParams,
   UserConnectionStatusEvent,
@@ -34,11 +35,13 @@ const api: PortochatApi = {
   getConfig: () => ipcRenderer.invoke(IPC_INVOKE.getConfig),
   setConfig: (patch: Partial<AppConfig>) => ipcRenderer.invoke(IPC_INVOKE.setConfig, patch),
 
-  hostStart: (port: number) => ipcRenderer.invoke(IPC_INVOKE.hostStart, port),
+  hostStart: (port: number, password?: string) =>
+    ipcRenderer.invoke(IPC_INVOKE.hostStart, port, password),
   hostStop: () => ipcRenderer.invoke(IPC_INVOKE.hostStop),
+  hostSetPassword: (password: string) => ipcRenderer.invoke(IPC_INVOKE.hostSetPassword, password),
 
-  clientConnect: (host: string, port: number, nickname: string) =>
-    ipcRenderer.invoke(IPC_INVOKE.clientConnect, host, port, nickname),
+  clientConnect: (host: string, port: number, password: string) =>
+    ipcRenderer.invoke(IPC_INVOKE.clientConnect, host, port, password),
   clientDisconnect: () => ipcRenderer.invoke(IPC_INVOKE.clientDisconnect),
 
   sendMessage: (params: SendMessageParams) => ipcRenderer.invoke(IPC_INVOKE.sendMessage, params),
@@ -74,6 +77,7 @@ const api: PortochatApi = {
   onUserConnectionStatus: (cb: (e: UserConnectionStatusEvent) => void) =>
     subscribe(IPC_EVENT.userConnectionStatus, cb),
   onNameResult: (cb: (e: NameResultEvent) => void) => subscribe(IPC_EVENT.nameResult, cb),
+  onPasswordResult: (cb: (e: PasswordResultEvent) => void) => subscribe(IPC_EVENT.passwordResult, cb),
   onError: (cb: (e: ErrorEvent) => void) => subscribe(IPC_EVENT.errorGeneric, cb),
   onPeerKeyChanged: (cb: (e: PeerKeyChangedEvent) => void) =>
     subscribe(IPC_EVENT.peerKeyChanged, cb),

@@ -25,8 +25,12 @@ async function main(): Promise<void> {
     console.log(`[recv] ${m.ApplicationMessage}:`, JSON.stringify(m.toJSON()))
   })
 
-  console.log(`Connecting to ${host}:${port} as "electron-tester" (no E2E key, plain interop check)...`)
-  await session.connect(host, port, 'electron-tester', null)
+  console.log(`Connecting to ${host}:${port} (no E2E key, no password, plain interop check)...`)
+  await session.connect(host, port, null, '')
+
+  await new Promise((r) => setTimeout(r, 200))
+  console.log('Setting username to "electron-tester"...')
+  session.setUsername('electron-tester')
 
   await new Promise((r) => setTimeout(r, 500))
   console.log('Joining #interop-test...')

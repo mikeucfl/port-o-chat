@@ -16,6 +16,8 @@ export interface ListenResult {
 export interface HostServerOptions {
   /** Directory the browser build's static assets are served from (out/web). */
   webRoot: string
+  /** Optional join password, changeable later via core.setPassword(). Empty/undefined = no password. */
+  password?: string
 }
 
 /** How long an accepted socket may go without sending its first byte before it's dropped — an undecided connection is registered with neither listener and would otherwise leak. */
@@ -89,6 +91,7 @@ export class HostServer {
   private listening = false
 
   constructor(private readonly options: HostServerOptions) {
+    this.core.setPassword(options.password ?? null)
     this.httpServer = http.createServer((req, res) => serveStatic(this.options.webRoot, req, res))
     this.wss = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD_BYTES })
 
