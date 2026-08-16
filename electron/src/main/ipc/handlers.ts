@@ -7,7 +7,7 @@ import { NodeCryptoProvider } from '../crypto/nodeCryptoProvider'
 import { loadConfig, saveConfigPatch } from '../config/settings'
 import { HostServer } from '../net/hostServer'
 import { getLanIPv4Addresses } from '../net/lanAddresses'
-import { TcpClient } from '../net/tcpClient'
+import { WsClient } from '../net/wsClient'
 import { solidCircleDot } from '../util/badgeIcon'
 
 // out/main/index.js (this bundled file) sits alongside out/web/ once
@@ -31,7 +31,7 @@ export class SessionController {
 
   private readonly chat = new ChatController({
     crypto: new NodeCryptoProvider(),
-    createTransport: () => new TcpClient(),
+    createTransport: () => new WsClient(),
     emit: (channel, payload) => this.send(channel, payload)
   })
 

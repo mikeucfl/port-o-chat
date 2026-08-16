@@ -71,8 +71,8 @@ export function JoinSetupScreen() {
         </button>
         <h1 className={styles.title}>Join a server</h1>
         <p className={styles.subtitle}>
-          Connect to a Port-O-Chat server already running on your local network — including a
-          server hosted by the original Java client.
+          Connect to a Port-O-Chat server already running on your local network — one hosted by
+          this app, or by the browser-based client.
         </p>
 
         <div className={styles.field}>
