@@ -1,13 +1,19 @@
+import { join } from 'node:path'
 import { app, BrowserWindow, ipcMain, nativeImage, shell } from 'electron'
 import { IPC_INVOKE, IPC_EVENT } from '@shared/ipc-contract'
 import type { AppConfig, HostStartResult, SendMessageParams } from '@shared/protocolTypes'
 import { ChatController } from '@core/chatController'
 import { NodeCryptoProvider } from '../crypto/nodeCryptoProvider'
 import { loadConfig, saveConfigPatch } from '../config/settings'
+import { HostServer } from '../net/hostServer'
 import { getLanIPv4Addresses } from '../net/lanAddresses'
 import { TcpClient } from '../net/tcpClient'
-import { TcpChatServer } from '../net/tcpServer'
 import { solidCircleDot } from '../util/badgeIcon'
+
+// out/main/index.js (this bundled file) sits alongside out/web/ once
+// `npm run build:web` has run — see out/preload, out/renderer for the same
+// sibling-directory pattern used elsewhere in this file's neighbors.
+const WEB_ROOT = join(__dirname, '../web')
 
 /**
  * Thin Electron-specific adapter: the BrowserWindow/IPC bridge, the
@@ -20,7 +26,7 @@ import { solidCircleDot } from '../util/badgeIcon'
  */
 export class SessionController {
   private window: BrowserWindow | null = null
-  private hostServer: TcpChatServer | null = null
+  private hostServer: HostServer | null = null
   private overlayIconCache = new Map<number, Electron.NativeImage>()
 
   private readonly chat = new ChatController({
@@ -59,7 +65,7 @@ export class SessionController {
     if (this.hostServer) {
       throw new Error('A server is already running in this app instance')
     }
-    const server = new TcpChatServer()
+    const server = new HostServer({ webRoot: WEB_ROOT })
     const { port: boundPort } = await server.listen(port)
     this.hostServer = server
     return { port: boundPort, lanAddresses: getLanIPv4Addresses() }

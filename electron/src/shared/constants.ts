@@ -28,5 +28,8 @@ export const CHANNEL_KEY_LENGTH = 32
 
 export const DEFAULT_SERVER_PORT = 3456
 
+/** Path the WebSocket upgrade is accepted on, when HostServer demuxes a connection to HTTP instead of raw TCP. */
+export const WS_PATH = '/ws'
+
 /** Java DefaultData header: 1 (msgType) + 4 (bodyLen) + 8 (timestamp). */
 export const LEGACY_HEADER_LENGTH = 13
