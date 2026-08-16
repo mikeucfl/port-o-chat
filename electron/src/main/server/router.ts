@@ -6,7 +6,7 @@ import {
   MAX_MESSAGE_TEXT_LENGTH,
   MAX_NICKNAME_LENGTH
 } from '@shared/constants'
-import { portochat } from '../proto-gen/portochat'
+import { portochat } from '@proto/portochat'
 import type { ChannelRegistry } from './channelRegistry'
 import type { PeerConnection } from './peer'
 import type { UserRecord } from './userRegistry'

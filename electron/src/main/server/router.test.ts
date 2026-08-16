@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { portochat } from '../proto-gen/portochat'
+import { portochat } from '@proto/portochat'
 import { ChannelRegistry } from './channelRegistry'
 import { ChatRouter } from './router'
 import { FakePeer } from './testHelpers'

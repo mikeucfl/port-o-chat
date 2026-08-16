@@ -29,7 +29,7 @@ import { TrustStore } from '../crypto/trust'
 import { loadConfig, saveConfigPatch } from '../config/settings'
 import { getLanIPv4Addresses } from '../net/lanAddresses'
 import { TcpChatServer } from '../net/tcpServer'
-import { portochat } from '../proto-gen/portochat'
+import { portochat } from '@proto/portochat'
 import { solidCircleDot } from '../util/badgeIcon'
 
 interface RosterEntry {

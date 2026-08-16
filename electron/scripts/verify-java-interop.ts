@@ -6,7 +6,7 @@
  * Usage: npx tsx scripts/verify-java-interop.ts [host] [port]
  */
 import { ChatSession } from '../src/main/client/session'
-import { portochat } from '../src/main/proto-gen/portochat'
+import { portochat } from '../src/proto-gen/portochat'
 
 const host = process.argv[2] ?? '127.0.0.1'
 const port = Number.parseInt(process.argv[3] ?? '3457', 10)

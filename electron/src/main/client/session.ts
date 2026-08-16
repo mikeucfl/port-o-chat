@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { portochat } from '../proto-gen/portochat'
+import { portochat } from '@proto/portochat'
 import { TcpClient, type ConnectionState } from '../net/tcpClient'
 
 const RequestType = portochat.Request.RequestType

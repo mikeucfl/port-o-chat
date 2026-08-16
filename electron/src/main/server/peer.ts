@@ -1,4 +1,4 @@
-import type { portochat } from '../proto-gen/portochat'
+import type { portochat } from '@proto/portochat'
 
 /**
  * Transport-agnostic connection abstraction. The real implementation

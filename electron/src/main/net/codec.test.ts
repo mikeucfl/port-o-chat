@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { CodecError, decodeFrame, encodeFrame } from './codec'
 import { FrameStreamParser } from './framing'
-import { portochat } from '../proto-gen/portochat'
+import { portochat } from '@proto/portochat'
 
 function roundTripPayload(message: portochat.IPortoChatMessage): Buffer {
   const wire = encodeFrame(message)

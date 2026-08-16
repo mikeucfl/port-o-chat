@@ -1,5 +1,5 @@
 import { LEGACY_HEADER_LENGTH, MAX_PROTOBUF_SIZE } from '@shared/constants'
-import { portochat } from '../proto-gen/portochat'
+import { portochat } from '@proto/portochat'
 import { wrapFrame } from './framing'
 
 /**

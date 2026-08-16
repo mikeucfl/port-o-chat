@@ -14,13 +14,14 @@ const pbtsMain = require('protobufjs-cli/pbts').main as (
 ) => void
 
 // Generates a static protobufjs module (+ .d.ts) from proto/portochat.proto
-// into src/main/proto-gen/. Only main-process code may import this — the
-// renderer must never link protobuf runtime code, only plain DTO types from
-// src/shared.
+// into src/proto-gen/, imported via the `@proto` alias by both the main
+// process and the isomorphic src/core layer (and, transitively, the browser
+// build). The renderer must still never link protobuf runtime code directly
+// — only plain DTO types from src/shared.
 
 const root = resolve(__dirname, '..')
 const protoFile = resolve(root, 'proto/portochat.proto')
-const outDir = resolve(root, 'src/main/proto-gen')
+const outDir = resolve(root, 'src/proto-gen')
 const jsOut = resolve(outDir, 'portochat.js')
 const dtsOut = resolve(outDir, 'portochat.d.ts')
 

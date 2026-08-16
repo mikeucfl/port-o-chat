@@ -9,7 +9,9 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "paths": {
-      "@shared/*": ["./src/shared/*"]
+      "@shared/*": ["./src/shared/*"],
+      "@core/*": ["./src/core/*"],
+      "@proto/*": ["./src/proto-gen/*"]
     },
     "esModuleInterop": true,
     "skipLibCheck": true,
@@ -22,6 +24,8 @@
     "src/main/**/*",
     "src/preload/**/*",
     "src/shared/**/*",
+    "src/core/**/*",
+    "src/proto-gen/**/*",
     "scripts/**/*"
   ]
 }

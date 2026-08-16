@@ -2,7 +2,7 @@ node_modules/
 out/
 release/
 dist/
-src/main/proto-gen/
+src/proto-gen/
 *.tsbuildinfo
 *.local
 .DS_Store

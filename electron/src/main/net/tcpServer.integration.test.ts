@@ -1,6 +1,6 @@
 import net from 'node:net'
 import { afterEach, describe, expect, it } from 'vitest'
-import { portochat } from '../proto-gen/portochat'
+import { portochat } from '@proto/portochat'
 import { AddressInUseError, TcpChatServer } from './tcpServer'
 import { TcpClient } from './tcpClient'
 import { wrapFrame } from './framing'

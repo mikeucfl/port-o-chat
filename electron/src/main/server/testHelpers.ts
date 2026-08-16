@@ -1,4 +1,4 @@
-import type { portochat } from '../proto-gen/portochat'
+import type { portochat } from '@proto/portochat'
 import type { PeerConnection } from './peer'
 
 /** In-memory fake PeerConnection for unit tests — no real socket involved. */
