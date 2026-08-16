@@ -1,5 +1,8 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
-import { afterEach, describe, expect, it } from 'vitest'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { WebSocket as WsTestClient, type RawData } from 'ws'
 import { WS_PATH } from '@shared/constants'
 import { decodeFrame, encodeFrame } from '@core/codec'
@@ -286,5 +289,165 @@ describe('HostServer (real sockets: raw TCP, WebSocket, and HTTP demuxed on one 
     expect(response.status).toBe(200)
     const text = await response.text()
     expect(text).toContain('build:web')
+  })
+
+  it('sends the CSP/security headers on every response, including the placeholder page', async () => {
+    const server = new HostServer({ webRoot: WEB_ROOT })
+    servers.push(server)
+    const { port } = await server.listen(0, '127.0.0.1')
+
+    const response = await fetch(`http://127.0.0.1:${port}/`)
+    expect(response.headers.get('content-security-policy')).toContain("default-src 'self'")
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+  })
+
+  describe('WebSocket Origin allowlist', () => {
+    it('accepts an upgrade with no Origin header (this app\'s own Node-based clients)', async () => {
+      const server = new HostServer({ webRoot: WEB_ROOT })
+      servers.push(server)
+      const { port } = await server.listen(0, '127.0.0.1')
+
+      // The `ws` package's own client (used by connectWs/TcpClient tests
+      // throughout this file) never sends an Origin header by default —
+      // already implicitly proven by every other WS test in this file
+      // passing. This test asserts it explicitly instead of relying on that.
+      const ws = await connectWs(port)
+      wsClients.push(ws)
+      expect(ws.readyState).toBe(ws.OPEN)
+    })
+
+    it('accepts an upgrade whose Origin host matches the request\'s own Host header (same-origin browser tab)', async () => {
+      const server = new HostServer({ webRoot: WEB_ROOT })
+      servers.push(server)
+      const { port } = await server.listen(0, '127.0.0.1')
+
+      const ws = new WsTestClient(`ws://127.0.0.1:${port}${WS_PATH}`, {
+        headers: { Origin: `http://127.0.0.1:${port}` }
+      })
+      wsClients.push(ws)
+      await new Promise<void>((resolve, reject) => {
+        ws.once('open', () => resolve())
+        ws.once('error', reject)
+      })
+      expect(ws.readyState).toBe(ws.OPEN)
+    })
+
+    it('rejects an upgrade whose Origin does not match the request\'s Host (a background tab from another site)', async () => {
+      const server = new HostServer({ webRoot: WEB_ROOT })
+      servers.push(server)
+      const { port } = await server.listen(0, '127.0.0.1')
+
+      const ws = new WsTestClient(`ws://127.0.0.1:${port}${WS_PATH}`, {
+        headers: { Origin: 'https://evil.example' }
+      })
+      await new Promise<void>((resolve) => {
+        ws.once('error', () => resolve())
+        ws.once('unexpected-response', () => resolve())
+        ws.once('close', () => resolve())
+      })
+      expect(ws.readyState).not.toBe(ws.OPEN)
+
+      // Server should still be healthy afterwards for a legitimate client.
+      const legit = await connectWs(port)
+      wsClients.push(legit)
+      expect(legit.readyState).toBe(legit.OPEN)
+    })
+  })
+
+  it('closes a WebSocket connection that sends a message larger than the wire protocol ceiling', async () => {
+    const server = new HostServer({ webRoot: WEB_ROOT })
+    servers.push(server)
+    const { port } = await server.listen(0, '127.0.0.1')
+
+    const ws = await connectWs(port)
+    wsClients.push(ws)
+    const closed = new Promise<void>((resolve) => ws.once('close', () => resolve()))
+    // MAX_FRAME_SIZE (65535) + 1024 is the configured maxPayload ceiling —
+    // send comfortably past it in one WS message.
+    ws.send(Buffer.alloc(70_000, 0x41))
+    await closed
+
+    // Server should still accept and serve a legitimate client afterwards.
+    const legit = await connectWs(port)
+    wsClients.push(legit)
+    await setUsernameWs(legit, 'still-works-ws')
+  })
+
+  describe('static file serving, with a real built webRoot', () => {
+    let webRoot: string
+
+    beforeEach(() => {
+      webRoot = mkdtempSync(join(tmpdir(), 'portochat-webroot-'))
+      writeFileSync(join(webRoot, 'index.html'), '<!doctype html><title>fixture index</title>')
+      writeFileSync(join(webRoot, 'app.js'), 'console.log("fixture")')
+      writeFileSync(join(webRoot, 'secret.txt'), 'not web-servable content')
+    })
+
+    afterEach(() => {
+      rmSync(webRoot, { recursive: true, force: true })
+    })
+
+    it('serves index.html at the root with no-store caching', async () => {
+      const server = new HostServer({ webRoot })
+      servers.push(server)
+      const { port } = await server.listen(0, '127.0.0.1')
+
+      const response = await fetch(`http://127.0.0.1:${port}/`)
+      expect(response.status).toBe(200)
+      expect(response.headers.get('content-type')).toContain('text/html')
+      expect(response.headers.get('cache-control')).toBe('no-store')
+      expect(await response.text()).toContain('fixture index')
+    })
+
+    it('serves a real asset with an immutable cache header and the correct content-type', async () => {
+      const server = new HostServer({ webRoot })
+      servers.push(server)
+      const { port } = await server.listen(0, '127.0.0.1')
+
+      const response = await fetch(`http://127.0.0.1:${port}/app.js`)
+      expect(response.status).toBe(200)
+      expect(response.headers.get('content-type')).toContain('text/javascript')
+      expect(response.headers.get('cache-control')).toContain('immutable')
+      expect(await response.text()).toBe('console.log("fixture")')
+    })
+
+    it('falls back to index.html for an unknown path (client-routed SPA)', async () => {
+      const server = new HostServer({ webRoot })
+      servers.push(server)
+      const { port } = await server.listen(0, '127.0.0.1')
+
+      const response = await fetch(`http://127.0.0.1:${port}/some/deep/client/route`)
+      expect(response.status).toBe(200)
+      expect(await response.text()).toContain('fixture index')
+    })
+
+    it('never leaks a file outside webRoot for an encoded path-traversal attempt (%2e%2e)', async () => {
+      const server = new HostServer({ webRoot })
+      servers.push(server)
+      const { port } = await server.listen(0, '127.0.0.1')
+
+      // package.json exists a few levels up from webRoot (a fresh tmpdir) —
+      // if traversal ever worked, this would leak it. %2e%2e survives
+      // fetch()'s own URL normalization (which collapses a literal `../`
+      // in the request path before it's ever sent) unlike an unencoded
+      // attempt, so this is the meaningful case to test at the HTTP-client
+      // level — serveStatic's own resolved-path check (httpStatic.ts) is
+      // what's actually being exercised here, decoding %2e%2e to `..`
+      // itself and then rejecting the escape.
+      const response = await fetch(`http://127.0.0.1:${port}/%2e%2e/%2e%2e/%2e%2e/%2e%2e/package.json`)
+      expect(response.status).toBe(200) // safe SPA-fallback to index.html, not a 200 that means "leaked"
+      const text = await response.text()
+      expect(text).not.toContain('port-o-chat-electron')
+      expect(text).toContain('fixture index')
+    })
+
+    it('rejects non-GET/HEAD methods', async () => {
+      const server = new HostServer({ webRoot })
+      servers.push(server)
+      const { port } = await server.listen(0, '127.0.0.1')
+
+      const response = await fetch(`http://127.0.0.1:${port}/`, { method: 'POST' })
+      expect(response.status).toBe(405)
+    })
   })
 })

@@ -1,7 +1,7 @@
 import http from 'node:http'
 import net from 'node:net'
 import { WebSocketServer } from 'ws'
-import { WS_PATH } from '@shared/constants'
+import { MAX_FRAME_SIZE, WS_PATH } from '@shared/constants'
 import { ChatCore } from '../server/chatCore'
 import { serveStatic } from './httpStatic'
 import { handleTcpSocket } from './tcpListener'
@@ -20,6 +20,44 @@ export interface HostServerOptions {
 
 /** How long an accepted socket may go without sending its first byte before it's dropped — an undecided connection is registered with neither listener and would otherwise leak. */
 const DECISION_TIMEOUT_MS = 10_000
+
+/**
+ * Caps a single WebSocket message at a bit more than the wire protocol's
+ * own MAX_FRAME_SIZE ceiling (65535) — the `ws` library rejects an
+ * oversized message before fully buffering it, rather than this app's own
+ * FrameStreamParser only catching it after the fact.
+ */
+const WS_MAX_PAYLOAD_BYTES = MAX_FRAME_SIZE + 1024
+
+/**
+ * Unlike a raw TCP socket (which a browser page can never open at all),
+ * WebSocket is not subject to CORS — any page a LAN user happens to have
+ * open in another tab could otherwise open `ws://<lan-ip>:3456/ws` in the
+ * background and silently join the chat. Accepts a request with no Origin
+ * header at all (this app's own Node-based clients — main/net/wsClient.ts
+ * over the `ws` package never sends one), or one whose Origin's host
+ * exactly matches the request's own Host header (the same-origin case:
+ * a browser tab that loaded the page from this exact server connecting
+ * back to it). A background tab from an unrelated site sends its own,
+ * unrelated Origin, which won't match and is rejected.
+ *
+ * Known, deliberate limitation: this also rejects a browser client
+ * manually pointed (via the Join screen) at a *different* server than the
+ * one that served its page — cross-server joining from the browser build
+ * isn't supported, only from the page you actually loaded. Documented in
+ * PORTING-NOTES.md. Does not defend against DNS rebinding specifically
+ * (out of scope for a LAN-only app — see CRYPTO.md's threat model for the
+ * project's general stance on being explicit about what isn't covered).
+ */
+function isOriginAllowed(req: http.IncomingMessage): boolean {
+  const origin = req.headers.origin
+  if (!origin) return true
+  try {
+    return new URL(origin).host === req.headers.host
+  } catch {
+    return false
+  }
+}
 
 /**
  * The host-mode server: one bound port serving three kinds of client from
@@ -52,16 +90,14 @@ export class HostServer {
 
   constructor(private readonly options: HostServerOptions) {
     this.httpServer = http.createServer((req, res) => serveStatic(this.options.webRoot, req, res))
-    this.wss = new WebSocketServer({ noServer: true })
+    this.wss = new WebSocketServer({ noServer: true, maxPayload: WS_MAX_PAYLOAD_BYTES })
 
     this.httpServer.on('upgrade', (req, socket, head) => {
       const pathname = new URL(req.url ?? '/', 'http://host-server.internal').pathname
-      if (pathname !== WS_PATH) {
+      if (pathname !== WS_PATH || !isOriginAllowed(req)) {
         socket.destroy()
         return
       }
-      // Origin allowlist / DNS-rebinding protection is a hardening-pass
-      // follow-up, not yet enforced here.
       this.wss.handleUpgrade(req, socket, head, (ws) => {
         handleWsConnection(this.core, ws, req.socket.remoteAddress ?? 'unknown')
       })

@@ -21,6 +21,20 @@ const NOT_BUILT_PAGE = `<!doctype html>
 </body></html>`
 
 /**
+ * Sent as a real response header on every response, in addition to the
+ * equivalent <meta> tag baked into src/web/index.html — the header covers
+ * the placeholder page and any non-HTML response too, and applies before
+ * the browser has parsed any HTML at all. Keep in sync with that file's
+ * CSP if either changes.
+ */
+const SECURITY_HEADERS = {
+  'Content-Security-Policy':
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: wss:",
+  'X-Content-Type-Options': 'nosniff',
+  'Referrer-Policy': 'no-referrer'
+} as const
+
+/**
  * Minimal static file server for the browser build (out/web) — no Express,
  * since this app has no other HTTP surface and this is the only thing it
  * needs to do. Any resolved path outside webRoot is rejected outright
@@ -32,12 +46,14 @@ const NOT_BUILT_PAGE = `<!doctype html>
  */
 export function serveStatic(webRoot: string, req: IncomingMessage, res: ServerResponse): void {
   if (req.method !== 'GET' && req.method !== 'HEAD') {
-    res.writeHead(405, { 'Content-Type': 'text/plain' }).end('Method Not Allowed')
+    res.writeHead(405, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS }).end('Method Not Allowed')
     return
   }
 
   if (!existsSync(webRoot)) {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }).end(NOT_BUILT_PAGE)
+    res
+      .writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', ...SECURITY_HEADERS })
+      .end(NOT_BUILT_PAGE)
     return
   }
 
@@ -46,18 +62,18 @@ export function serveStatic(webRoot: string, req: IncomingMessage, res: ServerRe
   try {
     relative = urlPath === '/' ? 'index.html' : decodeURIComponent(urlPath).replace(/^\/+/, '')
   } catch {
-    res.writeHead(400, { 'Content-Type': 'text/plain' }).end('Bad Request')
+    res.writeHead(400, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS }).end('Bad Request')
     return
   }
   if (relative.includes('\0')) {
-    res.writeHead(400, { 'Content-Type': 'text/plain' }).end('Bad Request')
+    res.writeHead(400, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS }).end('Bad Request')
     return
   }
 
   const rootResolved = resolvePath(webRoot)
   const resolved = resolvePath(rootResolved, relative)
   if (resolved !== rootResolved && !resolved.startsWith(rootResolved + sep)) {
-    res.writeHead(403, { 'Content-Type': 'text/plain' }).end('Forbidden')
+    res.writeHead(403, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS }).end('Forbidden')
     return
   }
 
@@ -66,7 +82,7 @@ export function serveStatic(webRoot: string, req: IncomingMessage, res: ServerRe
     filePath = resolvePath(rootResolved, 'index.html')
   }
   if (!existsSync(filePath)) {
-    res.writeHead(404, { 'Content-Type': 'text/plain' }).end('Not Found')
+    res.writeHead(404, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS }).end('Not Found')
     return
   }
 
@@ -77,7 +93,7 @@ export function serveStatic(webRoot: string, req: IncomingMessage, res: ServerRe
   res.writeHead(200, {
     'Content-Type': contentType,
     'Cache-Control': cacheControl,
-    'X-Content-Type-Options': 'nosniff'
+    ...SECURITY_HEADERS
   })
   if (req.method === 'HEAD') {
     res.end()
