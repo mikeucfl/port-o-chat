@@ -1,8 +1,8 @@
 import { EventEmitter } from 'node:events'
 import net from 'node:net'
 import type { portochat } from '@proto/portochat'
-import { decodeFrame, encodeFrame } from './codec'
-import { FrameStreamParser } from './framing'
+import { decodeFrame, encodeFrame } from '@core/codec'
+import { FrameStreamParser } from '@core/framing'
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected'
 

@@ -5,14 +5,19 @@
  *
  * Usage: npx tsx scripts/verify-java-interop.ts [host] [port]
  */
-import { ChatSession } from '../src/main/client/session'
+import { ChatSession } from '../src/core/session'
+import { TcpClient } from '../src/main/net/tcpClient'
 import { portochat } from '../src/proto-gen/portochat'
 
 const host = process.argv[2] ?? '127.0.0.1'
 const port = Number.parseInt(process.argv[3] ?? '3457', 10)
 
 async function main(): Promise<void> {
-  const session = new ChatSession()
+  // Explicitly the raw-TCP transport: this script's whole purpose is
+  // verifying interop against a real Java server, which only ever speaks
+  // TCP, never WebSocket — this is the one place TcpClient is still used
+  // by choice, not by default.
+  const session = new ChatSession(new TcpClient())
   session.on('stateChange', (state: string, err?: Error) => {
     console.log(`[state] ${state}${err ? ' error=' + err.message : ''}`)
   })

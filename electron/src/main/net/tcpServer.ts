@@ -4,8 +4,8 @@ import { KeepaliveTimer } from '../server/keepalive'
 import type { PeerConnection } from '../server/peer'
 import { ChatRouter } from '../server/router'
 import { UserRegistry } from '../server/userRegistry'
-import { decodeFrame, encodeFrame } from './codec'
-import { FrameStreamParser } from './framing'
+import { decodeFrame, encodeFrame } from '@core/codec'
+import { FrameStreamParser } from '@core/framing'
 
 export class AddressInUseError extends Error {}
 

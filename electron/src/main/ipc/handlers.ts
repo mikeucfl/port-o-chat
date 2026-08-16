@@ -18,16 +18,17 @@ import type {
   UserConnectionStatusEvent,
   UserDto
 } from '@shared/protocolTypes'
-import { ChatSession } from '../client/session'
+import { ChatSession } from '@core/session'
+import { TrustStore } from '@core/trust'
 import { AeadOpenError } from '../crypto/aead'
 import { ChannelKeyManager } from '../crypto/channelKeyManager'
 import { decryptChannelMessage, encryptChannelMessage } from '../crypto/channelKeys'
 import { decryptDm, deriveDmKey, encryptDm } from '../crypto/dm'
 import { computeFingerprint } from '../crypto/fingerprint'
 import { getOrCreateIdentity } from '../crypto/identity'
-import { TrustStore } from '../crypto/trust'
 import { loadConfig, saveConfigPatch } from '../config/settings'
 import { getLanIPv4Addresses } from '../net/lanAddresses'
+import { TcpClient } from '../net/tcpClient'
 import { TcpChatServer } from '../net/tcpServer'
 import { portochat } from '@proto/portochat'
 import { solidCircleDot } from '../util/badgeIcon'
@@ -51,7 +52,7 @@ export class SessionController {
   private hostServer: TcpChatServer | null = null
   private session: ChatSession | null = null
   private readonly identity = getOrCreateIdentity()
-  private readonly trustStore = new TrustStore()
+  private readonly trustStore = new TrustStore(computeFingerprint)
   private keyManager: ChannelKeyManager | null = null
   private roster = new Map<string, RosterEntry>()
   private channelMembers = new Map<string, Set<string>>()
@@ -110,7 +111,7 @@ export class SessionController {
     this.pendingCreations.clear()
     this.keyManager = null
 
-    const session = new ChatSession()
+    const session = new ChatSession(new TcpClient())
     this.session = session
 
     session.on('stateChange', (state: ConnectionStatusEvent['state'], error?: Error) => {

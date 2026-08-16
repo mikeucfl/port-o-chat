@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { portochat } from '@proto/portochat'
 import { AddressInUseError, TcpChatServer } from './tcpServer'
 import { TcpClient } from './tcpClient'
-import { wrapFrame } from './framing'
+import { wrapFrame } from '@core/framing'
 
 const RequestType = portochat.Request.RequestType
 

@@ -1,18 +1,27 @@
-import { EventEmitter } from 'node:events'
 import { portochat } from '@proto/portochat'
-import { TcpClient, type ConnectionState } from '../net/tcpClient'
+import { TypedEmitter } from './emitter'
+import type { ChatTransport, ConnectionState } from './transport'
 
 const RequestType = portochat.Request.RequestType
+
+interface SessionEvents extends Record<string, unknown[]> {
+  stateChange: [state: ConnectionState, error?: Error]
+  message: [message: portochat.PortoChatMessage]
+  identity: [userId: string, username: string]
+}
 
 /**
  * Client-side session logic: connect, announce identity, send/receive chat
  * traffic. Equivalent to the Java ServerConnection.java. Used identically
  * for JOIN mode and for the host's own loopback connection to its own
- * server (see PORTING-NOTES.md) — one code path either way.
+ * server (see PORTING-NOTES.md) — one code path either way. The transport is
+ * injected rather than owned, so the exact same logic runs over WebSocket in
+ * both the Electron main process (main/net/wsClient.ts) and the browser
+ * build (web/wsClient.ts).
  *
  * This class only knows about the *legacy-compatible* wire protocol
  * (usernames, channels, chat, requests/notifications). E2E crypto is
- * layered on top by ipc/handlers.ts, which intercepts outgoing plaintext
+ * layered on top by ChatController, which intercepts outgoing plaintext
  * chat sends to encrypt them and incoming chat messages to decrypt them —
  * ChatSession itself never touches key material.
  *
@@ -22,12 +31,11 @@ const RequestType = portochat.Request.RequestType
  *   'identity'    (userId: string, username: string)      — once our own
  *                  server-assigned id becomes known (see observeSelfId)
  */
-export class ChatSession extends EventEmitter {
-  private client = new TcpClient()
+export class ChatSession extends TypedEmitter<SessionEvents> {
   private myUserId: string | null = null
   private myUsername: string | null = null
 
-  constructor() {
+  constructor(private readonly client: ChatTransport) {
     super()
     this.client.on('stateChange', (state: ConnectionState, error?: Error) => {
       if (state === 'disconnected') {
