@@ -1,67 +1,40 @@
 import { app, BrowserWindow, ipcMain, nativeImage, shell } from 'electron'
 import { IPC_INVOKE, IPC_EVENT } from '@shared/ipc-contract'
-import type {
-  AppConfig,
-  ChannelDto,
-  ChannelJoinPartEvent,
-  ChannelKeyRotatedEvent,
-  ChannelTopicChangedEvent,
-  ChatMessageDto,
-  ConnectionStatusEvent,
-  ErrorEvent,
-  HostStartResult,
-  IdentityEvent,
-  NameResultEvent,
-  PeerKeyChangedEvent,
-  SendMessageParams,
-  UserConnectionStatusEvent,
-  UserDto
-} from '@shared/protocolTypes'
-import { ChannelKeyManager } from '@core/channelKeyManager'
-import { ChatSession } from '@core/session'
-import { TrustStore } from '@core/trust'
-import { AeadOpenError } from '../crypto/aead'
+import type { AppConfig, HostStartResult, SendMessageParams } from '@shared/protocolTypes'
+import { ChatController } from '@core/chatController'
 import { NodeCryptoProvider } from '../crypto/nodeCryptoProvider'
 import { loadConfig, saveConfigPatch } from '../config/settings'
 import { getLanIPv4Addresses } from '../net/lanAddresses'
 import { TcpClient } from '../net/tcpClient'
 import { TcpChatServer } from '../net/tcpServer'
-import { portochat } from '@proto/portochat'
 import { solidCircleDot } from '../util/badgeIcon'
 
-interface RosterEntry {
-  id: string
-  name: string
-  host: string
-  e2eIdentityKeyRaw: Buffer | null
-}
-
 /**
- * Owns every piece of live session state in the main process: the host-mode
- * TCP server (if any), the client session (always present once connected —
- * host mode connects to its own server exactly like any other client, no
- * shortcut), the roster/channel caches needed to drive E2E, and the bridge
- * to the renderer over IPC. The renderer never sees any of this directly.
+ * Thin Electron-specific adapter: the BrowserWindow/IPC bridge, the
+ * host-mode TCP server, and OS integration (taskbar badge, external link
+ * opening). All chat/E2E policy lives in ChatController (src/core), shared
+ * with the future browser build — this class just wires it to IPC instead
+ * of an in-page event bus, and injects a Node-crypto-backed CryptoProvider
+ * and TcpClient transport (see PORTING-NOTES.md; the client transport is
+ * switching to WebSocket in a later stage of this work).
  */
 export class SessionController {
   private window: BrowserWindow | null = null
   private hostServer: TcpChatServer | null = null
-  private session: ChatSession | null = null
-  private readonly crypto = new NodeCryptoProvider()
-  private readonly trustStore = new TrustStore((key) => this.crypto.fingerprint(key))
-  private keyManager: ChannelKeyManager | null = null
-  private roster = new Map<string, RosterEntry>()
-  private channelMembers = new Map<string, Set<string>>()
-  private channelMeta = new Map<string, { e2e: boolean; creatorId: string; topic: string }>()
-  private pendingCreations = new Set<string>()
   private overlayIconCache = new Map<number, Electron.NativeImage>()
+
+  private readonly chat = new ChatController({
+    crypto: new NodeCryptoProvider(),
+    createTransport: () => new TcpClient(),
+    emit: (channel, payload) => this.send(channel, payload)
+  })
 
   attachWindow(win: BrowserWindow): void {
     this.window = win
   }
 
   shutdown(): void {
-    this.session?.disconnect()
+    this.chat.disconnect()
     this.hostServer?.close()
   }
 
@@ -100,210 +73,49 @@ export class SessionController {
   // ---- client ---------------------------------------------------------------
 
   async clientConnect(host: string, port: number, nickname: string): Promise<void> {
-    this.session?.disconnect()
-    this.roster.clear()
-    this.channelMembers.clear()
-    this.channelMeta.clear()
-    this.pendingCreations.clear()
-    this.keyManager = null
-
-    const session = new ChatSession(new TcpClient())
-    this.session = session
-
-    session.on('stateChange', (state: ConnectionStatusEvent['state'], error?: Error) => {
-      this.send<ConnectionStatusEvent>(IPC_EVENT.connectionStatus, { state, error: error?.message })
-    })
-    session.on('message', (message: portochat.PortoChatMessage) => this.handleMessage(message))
-    session.on('identity', (userId: string, username: string) => {
-      this.ensureKeyManager()
-      this.send<IdentityEvent>(IPC_EVENT.identity, { userId, nickname: username })
-      // Broadcasts only tell us about users connecting/renaming *after* we
-      // did; without this, anyone already online when we joined would
-      // never show up (no DM entry, no E2E identity key) until they
-      // happened to do something that re-broadcasts their UserData.
-      session.requestUserList()
-    })
-
-    await session.connect(host, port, nickname, this.crypto.identityPublicKey)
+    await this.chat.connect(host, port, nickname)
   }
 
   clientDisconnect(): void {
-    this.session?.disconnect()
-    this.session = null
+    this.chat.disconnect()
     this.hostServer?.close()
     this.hostServer = null
   }
 
-  private ensureKeyManager(): ChannelKeyManager | null {
-    if (this.keyManager) return this.keyManager
-    const myUserId = this.session?.userId
-    if (!myUserId) return null
-
-    this.keyManager = new ChannelKeyManager({
-      myUserId,
-      crypto: this.crypto,
-      sendKeyShare: (channel, toUserId, wrappedKey, nonce, epoch) => {
-        this.session?.sendKeyShare({ channel, toUserId, wrappedKey, nonce, keyEpoch: epoch })
-      },
-      getPeerPublicKey: (userId) => this.roster.get(userId)?.e2eIdentityKeyRaw ?? undefined,
-      getOtherMembers: (channel) =>
-        [...(this.channelMembers.get(channel) ?? [])].filter((id) => id !== myUserId),
-      onKeyReady: (channel, epoch) => {
-        this.send<ChannelKeyRotatedEvent>(IPC_EVENT.channelKeyRotated, { channel, epoch })
-      }
-    })
-    return this.keyManager
-  }
-
-  // ---- outgoing actions -------------------------------------------------------
-
-  /**
-   * The server never echoes a message back to its own sender (same as the
-   * original Java server) — the Java *client* worked around this with local
-   * optimistic echo the instant the user hit send. This is that same local
-   * echo, reusing the exact chat:message event/DTO shape incoming messages
-   * use so the renderer needs no separate "is this mine" display path.
-   */
-  private echoOwnMessage(
-    myUserId: string,
-    params: SendMessageParams,
-    e2e: boolean
-  ): void {
-    this.send<ChatMessageDto>(IPC_EVENT.chatMessage, {
-      clientMessageId: this.crypto.randomId(),
-      senderId: myUserId,
-      destinationId: params.destinationId,
-      isChannel: params.isChannel,
-      isAction: !!params.isAction,
-      message: params.text,
-      timestamp: Date.now(),
-      e2e,
-      decryptFailed: false
-    })
-  }
-
   sendMessage(params: SendMessageParams): void {
-    const session = this.session
-    const myUserId = session?.userId
-    if (!session || !myUserId) return
-
-    if (params.isChannel) {
-      const meta = this.channelMeta.get(params.destinationId)
-      if (meta?.e2e) {
-        // Never silently downgrade a known-E2E channel to plaintext — if
-        // the key hasn't arrived yet (e.g. sent an instant after joining),
-        // refuse the send rather than leak plaintext onto the wire.
-        const keyState = this.ensureKeyManager()?.getState(params.destinationId)
-        if (!keyState) {
-          this.send<ErrorEvent>(IPC_EVENT.errorGeneric, {
-            message: `Encryption for "${params.destinationId}" isn't ready yet — try again in a moment.`
-          })
-          return
-        }
-        const sealed = this.crypto.encryptChannelMessage(
-          keyState.key,
-          params.text,
-          params.destinationId,
-          myUserId,
-          keyState.epoch
-        )
-        session.sendChatMessage({
-          destinationId: params.destinationId,
-          isChannel: true,
-          message: '',
-          isAction: params.isAction,
-          e2eCiphertext: sealed.ciphertext,
-          e2eNonce: sealed.nonce,
-          e2eKeyEpoch: keyState.epoch
-        })
-        this.echoOwnMessage(myUserId, params, true)
-        return
-      }
-      session.sendChatMessage({
-        destinationId: params.destinationId,
-        isChannel: true,
-        message: params.text,
-        isAction: params.isAction
-      })
-      this.echoOwnMessage(myUserId, params, false)
-      return
-    }
-
-    // DM: automatically E2E whenever we know the recipient's identity key
-    // (i.e. they're running an E2E-capable client too) — no per-DM opt-in
-    // toggle, since there's no reason to prefer plaintext when both ends
-    // support encryption. Falls back to plaintext for legacy peers.
-    const recipient = this.roster.get(params.destinationId)
-    if (recipient?.e2eIdentityKeyRaw) {
-      if (this.trustStore.isBlocked(params.destinationId)) {
-        this.send<ErrorEvent>(IPC_EVENT.errorGeneric, {
-          message: `${recipient.name || 'This user'}'s key changed. Verify their new safety number before sending.`
-        })
-        return
-      }
-      const sealed = this.crypto.encryptDm(
-        recipient.e2eIdentityKeyRaw,
-        params.text,
-        myUserId,
-        params.destinationId
-      )
-      session.sendChatMessage({
-        destinationId: params.destinationId,
-        isChannel: false,
-        message: '',
-        isAction: params.isAction,
-        e2eCiphertext: sealed.ciphertext,
-        e2eNonce: sealed.nonce
-      })
-      this.echoOwnMessage(myUserId, params, true)
-      return
-    }
-
-    session.sendChatMessage({
-      destinationId: params.destinationId,
-      isChannel: false,
-      message: params.text,
-      isAction: params.isAction
-    })
-    this.echoOwnMessage(myUserId, params, false)
+    this.chat.sendMessage(params)
   }
 
   joinChannel(name: string, e2e: boolean): void {
-    if (e2e && !this.channelMeta.has(name)) this.pendingCreations.add(name)
-    this.session?.joinChannel(name, e2e)
-    this.session?.requestChannelUserList(name)
+    this.chat.joinChannel(name, e2e)
   }
 
   partChannel(name: string): void {
-    this.session?.partChannel(name)
-    this.channelMembers.delete(name)
-    this.channelMeta.delete(name)
-    this.keyManager?.forget(name)
+    this.chat.partChannel(name)
   }
 
   requestChannelList(): void {
-    this.session?.requestChannelList()
+    this.chat.requestChannelList()
   }
 
   setNickname(name: string): void {
-    this.session?.setUsername(name)
+    this.chat.setNickname(name)
   }
 
   setChannelTopic(channel: string, topic: string): void {
-    this.session?.setChannelTopic(channel, topic)
+    this.chat.setChannelTopic(channel, topic)
   }
 
   getFingerprint(userId: string): string | null {
-    const key = this.roster.get(userId)?.e2eIdentityKeyRaw
-    return key ? this.crypto.fingerprint(key) : null
+    return this.chat.getFingerprint(userId)
   }
 
   getMyFingerprint(): string {
-    return this.crypto.fingerprint(this.crypto.identityPublicKey)
+    return this.chat.getMyFingerprint()
   }
 
   trustPeerKey(userId: string): void {
-    this.trustStore.trust(userId)
+    this.chat.trustPeerKey(userId)
   }
 
   // ---- window/OS integration ------------------------------------------------
@@ -338,283 +150,6 @@ export class SessionController {
         this.window.setOverlayIcon(null, '')
       }
     }
-  }
-
-  // ---- incoming message handling ---------------------------------------------
-
-  private handleMessage(message: portochat.PortoChatMessage): void {
-    switch (message.ApplicationMessage) {
-      case 'channelList':
-        this.handleChannelList(message.channelList)
-        break
-      case 'chatMessage':
-        this.handleChatMessage(message.chatMessage)
-        break
-      case 'errorMessage':
-        this.handleErrorMessage(message.errorMessage)
-        break
-      case 'notification':
-        this.handleNotification(message.notification)
-        break
-      case 'userList':
-        this.handleUserList(message.userList)
-        break
-      case 'channelTopic':
-        this.handleChannelTopic(message.channelTopic)
-        break
-      case 'keyShare':
-        this.handleKeyShare(message.keyShare)
-        break
-      default:
-        break
-    }
-  }
-
-  private toDto(user: portochat.IUserData): UserDto {
-    return {
-      id: user.id ?? '',
-      name: user.name ?? '',
-      host: user.host ?? '',
-      e2eCapable: !!user.e2eIdentityKey && user.e2eIdentityKey.length > 0
-    }
-  }
-
-  private updateRoster(user: portochat.IUserData): void {
-    if (!user.id) return
-    const rawKey = user.e2eIdentityKey && user.e2eIdentityKey.length > 0
-      ? Buffer.from(user.e2eIdentityKey)
-      : null
-    this.roster.set(user.id, {
-      id: user.id,
-      name: user.name ?? '',
-      host: user.host ?? '',
-      e2eIdentityKeyRaw: rawKey
-    })
-    if (rawKey) {
-      const changeEvent = this.trustStore.observe(user.id, rawKey)
-      if (changeEvent) {
-        this.send<PeerKeyChangedEvent>(IPC_EVENT.peerKeyChanged, changeEvent)
-      }
-    }
-  }
-
-  private handleChannelList(channelList: portochat.IChannelList | null | undefined): void {
-    if (!channelList) return
-    const names = channelList.channels?.values ?? []
-    const metaByName = new Map((channelList.channelMeta ?? []).map((m) => [m.channel, m]))
-    const dtos: ChannelDto[] = names.map((name) => {
-      const meta = metaByName.get(name)
-      const e2e = meta?.e2eChannel ?? false
-      const creatorId = meta?.creatorId ?? ''
-      const topic = meta?.topic ?? ''
-      this.channelMeta.set(name, { e2e, creatorId, topic })
-      return { name, e2e, creatorId, topic }
-    })
-    this.send<ChannelDto[]>(IPC_EVENT.channelList, dtos)
-  }
-
-  private handleChannelTopic(channelTopic: portochat.IChannelTopic | null | undefined): void {
-    if (!channelTopic?.channel) return
-    const topic = channelTopic.topic ?? ''
-    const existing = this.channelMeta.get(channelTopic.channel)
-    if (existing) existing.topic = topic
-    this.send<ChannelTopicChangedEvent>(IPC_EVENT.channelTopicChanged, {
-      channel: channelTopic.channel,
-      topic
-    })
-  }
-
-  private handleChatMessage(chatMessage: portochat.IChatMessage | null | undefined): void {
-    const session = this.session
-    const myUserId = session?.userId
-    if (!chatMessage || !myUserId) return
-
-    const senderId = chatMessage.senderId ?? ''
-    const destinationId = chatMessage.destinationId ?? ''
-    const isChannel = !!chatMessage.isChannel
-    const ciphertext = chatMessage.e2eCiphertext
-    const nonce = chatMessage.e2eNonce
-    const e2e = !!ciphertext && ciphertext.length > 0
-
-    let text = chatMessage.message ?? ''
-    let decryptFailed = false
-
-    if (e2e && ciphertext && nonce) {
-      try {
-        if (isChannel) {
-          const keyState = this.ensureKeyManager()?.getState(destinationId)
-          if (!keyState) throw new AeadOpenError('no channel key yet')
-          text = this.crypto.decryptChannelMessage(
-            keyState.key,
-            { ciphertext: Buffer.from(ciphertext), nonce: Buffer.from(nonce) },
-            destinationId,
-            senderId,
-            chatMessage.e2eKeyEpoch ?? 0
-          )
-        } else {
-          const senderKey = this.roster.get(senderId)?.e2eIdentityKeyRaw
-          if (!senderKey) throw new AeadOpenError('unknown sender identity key')
-          text = this.crypto.decryptDm(
-            senderKey,
-            { ciphertext: Buffer.from(ciphertext), nonce: Buffer.from(nonce) },
-            senderId,
-            myUserId
-          )
-        }
-      } catch {
-        text = ''
-        decryptFailed = true
-      }
-    }
-
-    const dto: ChatMessageDto = {
-      clientMessageId: this.crypto.randomId(),
-      senderId,
-      destinationId,
-      isChannel,
-      isAction: !!chatMessage.isAction,
-      message: text,
-      timestamp: Date.now(),
-      e2e,
-      decryptFailed
-    }
-    this.send<ChatMessageDto>(IPC_EVENT.chatMessage, dto)
-  }
-
-  private handleErrorMessage(errorMessage: portochat.IErrorMessage | null | undefined): void {
-    if (!errorMessage) return
-    const ErrorType = portochat.ErrorMessage.ErrorType
-    if (errorMessage.errorType === ErrorType.UserNameInUse) {
-      this.send<NameResultEvent>(IPC_EVENT.nameResult, {
-        success: false,
-        name: errorMessage.additionalMessage ?? ''
-      })
-      return
-    }
-    const message =
-      errorMessage.errorType === ErrorType.E2EChannelRequiresSupport
-        ? `"${errorMessage.additionalMessage}" is an encrypted channel and requires an E2E-capable client.`
-        : errorMessage.errorType === ErrorType.NotAuthorized
-          ? `Only the creator of "${errorMessage.additionalMessage}" can change its topic.`
-          : `Channel "${errorMessage.additionalMessage}" does not exist or you are not a member.`
-    this.send<ErrorEvent>(IPC_EVENT.errorGeneric, { message })
-  }
-
-  private handleNotification(notification: portochat.INotification | null | undefined): void {
-    if (!notification) return
-    const myUserId = this.session?.userId
-
-    if (notification.channelJoin) {
-      const { channel, userId } = notification.channelJoin
-      if (channel && userId) {
-        const set = this.channelMembers.get(channel) ?? new Set<string>()
-        set.add(userId)
-        this.channelMembers.set(channel, set)
-
-        const meta = this.channelMeta.get(channel)
-        if (meta?.e2e && userId !== myUserId && this.keyManager?.getState(channel)) {
-          this.keyManager.wrapForNewMember(channel, userId)
-        }
-        this.send<ChannelJoinPartEvent>(IPC_EVENT.channelJoinPart, { channel, userId, joined: true })
-      }
-      return
-    }
-
-    if (notification.channelPart) {
-      const { channel, userId } = notification.channelPart
-      if (channel && userId) {
-        this.channelMembers.get(channel)?.delete(userId)
-        this.send<ChannelJoinPartEvent>(IPC_EVENT.channelJoinPart, { channel, userId, joined: false })
-      }
-      return
-    }
-
-    if (notification.channelAdded) {
-      const { channel, e2eChannel, creatorId } = notification.channelAdded
-      if (channel) {
-        this.channelMeta.set(channel, { e2e: !!e2eChannel, creatorId: creatorId ?? '', topic: '' })
-        if (this.pendingCreations.has(channel)) {
-          this.pendingCreations.delete(channel)
-          if (e2eChannel) this.ensureKeyManager()?.createChannel(channel)
-        }
-        this.send<ChannelDto>(IPC_EVENT.channelAdded, {
-          name: channel,
-          e2e: !!e2eChannel,
-          creatorId: creatorId ?? '',
-          topic: ''
-        })
-      }
-      return
-    }
-
-    if (notification.channelRemoved) {
-      const { channel } = notification.channelRemoved
-      if (channel) {
-        this.channelMeta.delete(channel)
-        this.channelMembers.delete(channel)
-        this.keyManager?.forget(channel)
-        this.send<string>(IPC_EVENT.channelRemoved, channel)
-      }
-      return
-    }
-
-    if (notification.userConnectionStatus) {
-      const { user, connected } = notification.userConnectionStatus
-      if (user) {
-        this.updateRoster(user)
-        this.send<UserConnectionStatusEvent>(IPC_EVENT.userConnectionStatus, {
-          user: this.toDto(user),
-          connected: !!connected
-        })
-      }
-      return
-    }
-
-    if (notification.userDoesNotExist) {
-      const missingId = notification.userDoesNotExist.missingId ?? ''
-      this.send<ErrorEvent>(IPC_EVENT.errorGeneric, { message: `User "${missingId}" is not connected.` })
-      return
-    }
-
-    if (notification.userNameSet) {
-      this.send<NameResultEvent>(IPC_EVENT.nameResult, {
-        success: true,
-        name: notification.userNameSet.name ?? ''
-      })
-      return
-    }
-
-    if (notification.keyRotationNotice) {
-      const { channel, keyEpoch } = notification.keyRotationNotice
-      if (channel && keyEpoch !== undefined && keyEpoch !== null) {
-        this.ensureKeyManager()?.onKeyRotationNotice(channel, keyEpoch)
-      }
-    }
-  }
-
-  private handleUserList(userList: portochat.IUserList | null | undefined): void {
-    if (!userList) return
-    const users = userList.users ?? []
-    for (const user of users) this.updateRoster(user)
-
-    if (userList.channel) {
-      this.channelMembers.set(userList.channel, new Set(users.map((u) => u.id ?? '')))
-    }
-    this.send<[UserDto[], string | undefined]>(IPC_EVENT.userList, [
-      users.map((u) => this.toDto(u)),
-      userList.channel || undefined
-    ])
-  }
-
-  private handleKeyShare(keyShare: portochat.IKeyShare | null | undefined): void {
-    if (!keyShare?.channel || !keyShare.fromUserId || !keyShare.wrappedKey || !keyShare.nonce) return
-    this.ensureKeyManager()?.receiveKeyShare(
-      keyShare.channel,
-      keyShare.fromUserId,
-      Buffer.from(keyShare.wrappedKey),
-      Buffer.from(keyShare.nonce),
-      keyShare.keyEpoch ?? 0
-    )
   }
 }
 
