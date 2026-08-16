@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto'
 import { app, BrowserWindow, ipcMain, nativeImage, shell } from 'electron'
 import { IPC_INVOKE, IPC_EVENT } from '@shared/ipc-contract'
 import type {
@@ -18,14 +17,11 @@ import type {
   UserConnectionStatusEvent,
   UserDto
 } from '@shared/protocolTypes'
+import { ChannelKeyManager } from '@core/channelKeyManager'
 import { ChatSession } from '@core/session'
 import { TrustStore } from '@core/trust'
 import { AeadOpenError } from '../crypto/aead'
-import { ChannelKeyManager } from '../crypto/channelKeyManager'
-import { decryptChannelMessage, encryptChannelMessage } from '../crypto/channelKeys'
-import { decryptDm, deriveDmKey, encryptDm } from '../crypto/dm'
-import { computeFingerprint } from '../crypto/fingerprint'
-import { getOrCreateIdentity } from '../crypto/identity'
+import { NodeCryptoProvider } from '../crypto/nodeCryptoProvider'
 import { loadConfig, saveConfigPatch } from '../config/settings'
 import { getLanIPv4Addresses } from '../net/lanAddresses'
 import { TcpClient } from '../net/tcpClient'
@@ -51,8 +47,8 @@ export class SessionController {
   private window: BrowserWindow | null = null
   private hostServer: TcpChatServer | null = null
   private session: ChatSession | null = null
-  private readonly identity = getOrCreateIdentity()
-  private readonly trustStore = new TrustStore(computeFingerprint)
+  private readonly crypto = new NodeCryptoProvider()
+  private readonly trustStore = new TrustStore((key) => this.crypto.fingerprint(key))
   private keyManager: ChannelKeyManager | null = null
   private roster = new Map<string, RosterEntry>()
   private channelMembers = new Map<string, Set<string>>()
@@ -128,7 +124,7 @@ export class SessionController {
       session.requestUserList()
     })
 
-    await session.connect(host, port, nickname, this.identity.publicKeyRaw)
+    await session.connect(host, port, nickname, this.crypto.identityPublicKey)
   }
 
   clientDisconnect(): void {
@@ -145,7 +141,7 @@ export class SessionController {
 
     this.keyManager = new ChannelKeyManager({
       myUserId,
-      myPrivateKey: this.identity.privateKey,
+      crypto: this.crypto,
       sendKeyShare: (channel, toUserId, wrappedKey, nonce, epoch) => {
         this.session?.sendKeyShare({ channel, toUserId, wrappedKey, nonce, keyEpoch: epoch })
       },
@@ -174,7 +170,7 @@ export class SessionController {
     e2e: boolean
   ): void {
     this.send<ChatMessageDto>(IPC_EVENT.chatMessage, {
-      clientMessageId: randomUUID(),
+      clientMessageId: this.crypto.randomId(),
       senderId: myUserId,
       destinationId: params.destinationId,
       isChannel: params.isChannel,
@@ -204,7 +200,7 @@ export class SessionController {
           })
           return
         }
-        const sealed = encryptChannelMessage(
+        const sealed = this.crypto.encryptChannelMessage(
           keyState.key,
           params.text,
           params.destinationId,
@@ -245,13 +241,12 @@ export class SessionController {
         })
         return
       }
-      const key = deriveDmKey(
-        this.identity.privateKey,
+      const sealed = this.crypto.encryptDm(
         recipient.e2eIdentityKeyRaw,
+        params.text,
         myUserId,
         params.destinationId
       )
-      const sealed = encryptDm(key, params.text, myUserId, params.destinationId)
       session.sendChatMessage({
         destinationId: params.destinationId,
         isChannel: false,
@@ -300,11 +295,11 @@ export class SessionController {
 
   getFingerprint(userId: string): string | null {
     const key = this.roster.get(userId)?.e2eIdentityKeyRaw
-    return key ? computeFingerprint(key) : null
+    return key ? this.crypto.fingerprint(key) : null
   }
 
   getMyFingerprint(): string {
-    return computeFingerprint(this.identity.publicKeyRaw)
+    return this.crypto.fingerprint(this.crypto.identityPublicKey)
   }
 
   trustPeerKey(userId: string): void {
@@ -449,7 +444,7 @@ export class SessionController {
         if (isChannel) {
           const keyState = this.ensureKeyManager()?.getState(destinationId)
           if (!keyState) throw new AeadOpenError('no channel key yet')
-          text = decryptChannelMessage(
+          text = this.crypto.decryptChannelMessage(
             keyState.key,
             { ciphertext: Buffer.from(ciphertext), nonce: Buffer.from(nonce) },
             destinationId,
@@ -459,9 +454,8 @@ export class SessionController {
         } else {
           const senderKey = this.roster.get(senderId)?.e2eIdentityKeyRaw
           if (!senderKey) throw new AeadOpenError('unknown sender identity key')
-          const key = deriveDmKey(this.identity.privateKey, senderKey, myUserId, senderId)
-          text = decryptDm(
-            key,
+          text = this.crypto.decryptDm(
+            senderKey,
             { ciphertext: Buffer.from(ciphertext), nonce: Buffer.from(nonce) },
             senderId,
             myUserId
@@ -474,7 +468,7 @@ export class SessionController {
     }
 
     const dto: ChatMessageDto = {
-      clientMessageId: randomUUID(),
+      clientMessageId: this.crypto.randomId(),
       senderId,
       destinationId,
       isChannel,

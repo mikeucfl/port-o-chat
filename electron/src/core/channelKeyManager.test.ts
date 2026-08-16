@@ -1,11 +1,12 @@
-import { generateKeyPairSync, type KeyObject } from 'node:crypto'
+import { generateKeyPairSync } from 'node:crypto'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { NodeCryptoProvider } from '../main/crypto/nodeCryptoProvider'
+import type { CryptoProvider } from './cryptoProvider'
 import { ChannelKeyManager } from './channelKeyManager'
 
 interface Party {
   userId: string
-  privateKey: KeyObject
-  publicKeyRaw: Buffer
+  crypto: CryptoProvider
   manager: ChannelKeyManager
 }
 
@@ -19,18 +20,19 @@ class Simulation {
       (publicKey.export({ format: 'jwk' }) as { x: string }).x,
       'base64url'
     )
+    const crypto = new NodeCryptoProvider({ privateKey, publicKey, publicKeyRaw })
     const manager = new ChannelKeyManager({
       myUserId: userId,
-      myPrivateKey: privateKey,
+      crypto,
       sendKeyShare: (channel, toUserId, wrappedKey, nonce, epoch) => {
         const target = this.parties.get(toUserId)
         target?.manager.receiveKeyShare(channel, userId, wrappedKey, nonce, epoch)
       },
-      getPeerPublicKey: (id) => this.parties.get(id)?.publicKeyRaw,
+      getPeerPublicKey: (id) => this.parties.get(id)?.crypto.identityPublicKey,
       getOtherMembers: (channel) =>
         [...(this.members.get(channel) ?? [])].filter((id) => id !== userId)
     })
-    const party: Party = { userId, privateKey, publicKeyRaw, manager }
+    const party: Party = { userId, crypto, manager }
     this.parties.set(userId, party)
     return party
   }

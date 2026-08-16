@@ -15,15 +15,11 @@
     "types": ["vite/client"],
     "paths": {
       "@renderer/*": ["./src/renderer/*"],
-      "@shared/*": ["./src/shared/*"],
-      "@core/*": ["./src/core/*"],
-      "@proto/*": ["./src/proto-gen/*"]
+      "@shared/*": ["./src/shared/*"]
     }
   },
   "include": [
     "src/renderer/**/*",
-    "src/shared/**/*",
-    "src/core/**/*",
-    "src/proto-gen/**/*"
+    "src/shared/**/*"
   ]
 }

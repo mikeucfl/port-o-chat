@@ -1,5 +1,4 @@
-import type { KeyObject } from 'node:crypto'
-import { generateChannelKey, unwrapChannelKey, wrapChannelKey } from './channelKeys'
+import type { CryptoProvider } from './cryptoProvider'
 
 export interface ChannelKeyState {
   key: Buffer
@@ -8,7 +7,7 @@ export interface ChannelKeyState {
 
 export interface ChannelKeyManagerDeps {
   myUserId: string
-  myPrivateKey: KeyObject
+  crypto: CryptoProvider
   sendKeyShare: (channel: string, toUserId: string, wrappedKey: Buffer, nonce: Buffer, epoch: number) => void
   getPeerPublicKey: (userId: string) => Buffer | undefined
   /** Current members of the channel, excluding the local user. */
@@ -19,7 +18,8 @@ export interface ChannelKeyManagerDeps {
 /**
  * Client-side orchestration for per-channel E2E keys. Pure logic, no
  * transport — the server never appears in this file at all, matching the
- * invariant that it must never possess a channel key.
+ * invariant that it must never possess a channel key. Runs identically on
+ * both platforms via the injected CryptoProvider.
  *
  * Join flow: every existing member independently wraps the current key for
  * a joiner (wrapForNewMember); the joiner keeps the first KeyShare that
@@ -46,7 +46,7 @@ export class ChannelKeyManager {
 
   /** Called when the local user creates a brand-new E2E channel. */
   createChannel(channel: string): ChannelKeyState {
-    const state: ChannelKeyState = { key: generateChannelKey(), epoch: 0 }
+    const state: ChannelKeyState = { key: this.deps.crypto.generateChannelKey(), epoch: 0 }
     this.channels.set(channel, state)
     this.deps.onKeyReady?.(channel, state.epoch)
     return state
@@ -58,8 +58,7 @@ export class ChannelKeyManager {
     const peerKey = this.deps.getPeerPublicKey(joinerUserId)
     if (!current || !peerKey) return
 
-    const sealed = wrapChannelKey({
-      myPrivateKey: this.deps.myPrivateKey,
+    const sealed = this.deps.crypto.wrapChannelKey({
       peerPublicKeyRaw: peerKey,
       channelKey: current.key,
       channel,
@@ -85,8 +84,7 @@ export class ChannelKeyManager {
     if (!peerKey) return false
 
     try {
-      const key = unwrapChannelKey({
-        myPrivateKey: this.deps.myPrivateKey,
+      const key = this.deps.crypto.unwrapChannelKey({
         peerPublicKeyRaw: peerKey,
         sealed: { ciphertext: wrappedKey, nonce },
         channel,
@@ -112,12 +110,11 @@ export class ChannelKeyManager {
     const isResponsible = allIds[0] === this.deps.myUserId
     if (!isResponsible) return // someone else generates and sends us the new key
 
-    const newKey = generateChannelKey()
+    const newKey = this.deps.crypto.generateChannelKey()
     for (const memberId of others) {
       const peerKey = this.deps.getPeerPublicKey(memberId)
       if (!peerKey) continue
-      const sealed = wrapChannelKey({
-        myPrivateKey: this.deps.myPrivateKey,
+      const sealed = this.deps.crypto.wrapChannelKey({
         peerPublicKeyRaw: peerKey,
         channelKey: newKey,
         channel,
