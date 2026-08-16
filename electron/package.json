@@ -8,9 +8,13 @@
   "scripts": {
     "predev": "npm run build:proto",
     "dev": "electron-vite dev",
+    "predev:web": "npm run build:proto",
+    "dev:web": "vite -c vite.web.config.ts",
     "prebuild": "npm run build:proto",
-    "build": "electron-vite build && electron-builder",
-    "build:unpack": "electron-vite build && electron-builder --dir",
+    "build": "npm run build:web && electron-vite build && electron-builder",
+    "build:unpack": "npm run build:web && electron-vite build && electron-builder --dir",
+    "prebuild:web": "npm run build:proto",
+    "build:web": "vite build -c vite.web.config.ts",
     "build:proto": "tsx scripts/build-proto.ts",
     "pretest": "npm run build:proto",
     "pretypecheck": "npm run build:proto",
@@ -18,6 +22,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "buffer": "^6.0.3",
     "protobufjs": "^7.4.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

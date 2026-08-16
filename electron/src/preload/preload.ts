@@ -29,6 +29,8 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
 }
 
 const api: PortochatApi = {
+  capabilities: { canHost: true },
+
   getConfig: () => ipcRenderer.invoke(IPC_INVOKE.getConfig),
   setConfig: (patch: Partial<AppConfig>) => ipcRenderer.invoke(IPC_INVOKE.setConfig, patch),
 

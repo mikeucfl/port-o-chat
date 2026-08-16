@@ -28,7 +28,7 @@ class Simulation {
         const target = this.parties.get(toUserId)
         target?.manager.receiveKeyShare(channel, userId, wrappedKey, nonce, epoch)
       },
-      getPeerPublicKey: (id) => this.parties.get(id)?.crypto.identityPublicKey,
+      getPeerPublicKey: (id) => this.parties.get(id)?.crypto.identityPublicKey ?? undefined,
       getOtherMembers: (channel) =>
         [...(this.members.get(channel) ?? [])].filter((id) => id !== userId)
     })

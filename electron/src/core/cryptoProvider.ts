@@ -35,7 +35,8 @@ export interface UnwrapChannelKeyParams {
  * used to get passed around directly.
  */
 export interface CryptoProvider {
-  readonly identityPublicKey: Buffer
+  /** Null means this platform currently has no E2E identity to announce (e.g. the browser build before its crypto backend lands) — the client behaves like a legacy, non-E2E-capable one: plaintext works, E2E channels correctly refuse it. */
+  readonly identityPublicKey: Buffer | null
 
   /**
    * A random id, e.g. for client message ids. Deliberately not

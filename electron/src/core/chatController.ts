@@ -198,9 +198,12 @@ export class ChatController {
     // DM: automatically E2E whenever we know the recipient's identity key
     // (i.e. they're running an E2E-capable client too) — no per-DM opt-in
     // toggle, since there's no reason to prefer plaintext when both ends
-    // support encryption. Falls back to plaintext for legacy peers.
+    // support encryption. Falls back to plaintext for legacy peers — and
+    // for us, if this platform has no E2E identity of its own yet (e.g.
+    // the browser build before its crypto backend lands): a recipient
+    // supporting E2E doesn't mean we're able to do our half of it.
     const recipient = this.roster.get(params.destinationId)
-    if (recipient?.e2eIdentityKeyRaw) {
+    if (recipient?.e2eIdentityKeyRaw && this.deps.crypto.identityPublicKey) {
       if (this.trustStore.isBlocked(params.destinationId)) {
         this.send<ErrorEvent>(IPC_EVENT.errorGeneric, {
           message: `${recipient.name || 'This user'}'s key changed. Verify their new safety number before sending.`
@@ -264,8 +267,9 @@ export class ChatController {
     return key ? this.deps.crypto.fingerprint(key) : null
   }
 
-  getMyFingerprint(): string {
-    return this.deps.crypto.fingerprint(this.deps.crypto.identityPublicKey)
+  getMyFingerprint(): string | null {
+    const key = this.deps.crypto.identityPublicKey
+    return key ? this.deps.crypto.fingerprint(key) : null
   }
 
   trustPeerKey(userId: string): void {

@@ -23,6 +23,9 @@ import type {
  * access of any kind beyond this typed surface.
  */
 export interface PortochatApi {
+  /** What this platform can actually do — e.g. a browser tab can never bind a listening socket, so it reports canHost: false and the UI hides the option rather than surfacing a confusing error after the fact. */
+  readonly capabilities: { canHost: boolean }
+
   getConfig(): Promise<AppConfig>
   setConfig(patch: Partial<AppConfig>): Promise<void>
 

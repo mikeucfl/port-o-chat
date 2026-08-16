@@ -116,7 +116,7 @@ export class SessionController {
     return this.chat.getFingerprint(userId)
   }
 
-  getMyFingerprint(): string {
+  getMyFingerprint(): string | null {
     return this.chat.getMyFingerprint()
   }
 

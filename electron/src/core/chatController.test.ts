@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { portochat } from '@proto/portochat'
 import { NodeCryptoProvider } from '../main/crypto/nodeCryptoProvider'
 import { ChatController } from './chatController'
+import type { CryptoProvider } from './cryptoProvider'
 import type { ChatTransport, ChatTransportEvents, ConnectionState } from './transport'
 
 type Listener = (...args: unknown[]) => void
@@ -61,12 +62,31 @@ interface RecordedEvent {
   payload: unknown
 }
 
+/** A CryptoProvider reporting no identity at all — every crypto operation throws, since a platform with no identity key should never need to call one (see the identityPublicKey guard in sendMessage). Mirrors the browser build before its crypto backend lands. */
+function noIdentityCryptoProvider(): CryptoProvider {
+  const unreachable = (): never => {
+    throw new Error('unreachable: this platform has no E2E identity')
+  }
+  return {
+    identityPublicKey: null,
+    randomId: () => Math.random().toString(36).slice(2),
+    fingerprint: unreachable,
+    generateChannelKey: unreachable,
+    encryptDm: unreachable,
+    decryptDm: unreachable,
+    wrapChannelKey: unreachable,
+    unwrapChannelKey: unreachable,
+    encryptChannelMessage: unreachable,
+    decryptChannelMessage: unreachable
+  }
+}
+
 /** A ChatController that has completed the connect handshake and learned its own userId, ready to exercise sendMessage/handleMessage against. */
-async function connected(userId = 'me-id', nickname = 'tester') {
+async function connected(userId = 'me-id', nickname = 'tester', crypto: CryptoProvider = new NodeCryptoProvider(makeIdentity())) {
   const transport = new FakeTransport()
   const events: RecordedEvent[] = []
   const controller = new ChatController({
-    crypto: new NodeCryptoProvider(makeIdentity()),
+    crypto,
     createTransport: () => transport,
     emit: (channel, payload) => events.push({ channel, payload })
   })
@@ -123,6 +143,31 @@ describe('ChatController E2E policy', () => {
     const e2eSend = transport.sent.at(-1)?.chatMessage
     expect(e2eSend?.message).toBe('')
     expect(e2eSend?.e2eCiphertext?.length ?? 0).toBeGreaterThan(0)
+  })
+
+  it('falls back to plaintext when this platform has no E2E identity of its own, even if the peer is E2E-capable', async () => {
+    const { controller, transport } = await connected('me-id', 'tester', noIdentityCryptoProvider())
+    const peer = makeIdentity()
+
+    transport.deliver(
+      new portochat.PortoChatMessage({
+        notification: {
+          userConnectionStatus: {
+            connected: true,
+            user: { id: 'peer-id', name: 'peer', e2eIdentityKey: peer.publicKeyRaw }
+          }
+        }
+      })
+    )
+
+    // Must not throw (the stub crypto's encrypt methods all throw) and must
+    // send in plaintext, since we have nothing to encrypt with.
+    expect(() =>
+      controller.sendMessage({ destinationId: 'peer-id', isChannel: false, text: 'hi anyway' })
+    ).not.toThrow()
+    const sent = transport.sent.at(-1)?.chatMessage
+    expect(sent?.message).toBe('hi anyway')
+    expect(sent?.e2eCiphertext?.length ?? 0).toBe(0)
   })
 
   it('blocks outgoing E2E sends to a peer whose key changed, until explicitly re-trusted', async () => {
