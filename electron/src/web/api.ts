@@ -17,52 +17,12 @@ import type {
   UserDto
 } from '@shared/protocolTypes'
 import { ChatController } from '@core/chatController'
-import type { CryptoProvider } from '@core/cryptoProvider'
+import { WebCryptoProvider } from './crypto/webCryptoProvider'
 import { getConfig, setConfig } from './config'
 import { openExternalLink, setUnreadBadge } from './platform'
 import { BrowserWsClient } from './wsClient'
 
 type Listener = (payload: unknown) => void
-
-/**
- * A CryptoProvider reporting no identity at all — this build has no E2E
- * crypto backend yet (that's a separate, later piece of work), so this
- * client behaves exactly like a legacy, non-E2E-capable one: it never
- * announces an identity key, so DMs to/from it stay plaintext and it's
- * correctly refused when trying to join an E2E channel. Every actual
- * crypto method here should be unreachable — ChatController's
- * identityPublicKey guard is what keeps it that way — so each one throws
- * loudly rather than silently misbehaving if that guard is ever wrong.
- */
-function noE2ECryptoProvider(): CryptoProvider {
-  const unreachable = (): never => {
-    throw new Error('unreachable: this browser build has no E2E identity yet')
-  }
-  return {
-    identityPublicKey: null,
-    randomId,
-    fingerprint: unreachable,
-    generateChannelKey: unreachable,
-    encryptDm: unreachable,
-    decryptDm: unreachable,
-    wrapChannelKey: unreachable,
-    unwrapChannelKey: unreachable,
-    encryptChannelMessage: unreachable,
-    decryptChannelMessage: unreachable
-  }
-}
-
-/**
- * Client message ids need to be unique, not cryptographically unbiased —
- * deliberately not crypto.randomUUID(), which (like crypto.subtle) is
- * unavailable outside a Secure Context, i.e. exactly the plain
- * http://<lan-ip> deployment this app exists for.
- */
-function randomId(): string {
-  const bytes = new Uint8Array(16)
-  crypto.getRandomValues(bytes)
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
-}
 
 /**
  * Browser-side implementation of the exact same PortochatApi interface
@@ -90,7 +50,7 @@ export function createBrowserApi(): PortochatApi {
   }
 
   const chat = new ChatController({
-    crypto: noE2ECryptoProvider(),
+    crypto: new WebCryptoProvider(),
     createTransport: () => new BrowserWsClient(),
     emit
   })

@@ -26,6 +26,7 @@
     "src/shared/**/*",
     "src/core/**/*",
     "src/proto-gen/**/*",
-    "scripts/**/*"
+    "scripts/**/*",
+    "src/web/crypto/**/*"
   ]
 }

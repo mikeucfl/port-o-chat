@@ -1,6 +1,8 @@
 import { generateKeyPairSync } from 'node:crypto'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { x25519 } from '@noble/curves/ed25519.js'
 import { NodeCryptoProvider } from '../main/crypto/nodeCryptoProvider'
+import { WebCryptoProvider } from '../web/crypto/webCryptoProvider'
 import type { CryptoProvider } from './cryptoProvider'
 import { ChannelKeyManager } from './channelKeyManager'
 
@@ -10,17 +12,25 @@ interface Party {
   manager: ChannelKeyManager
 }
 
+function makeNodeCryptoProvider(): CryptoProvider {
+  const { privateKey, publicKey } = generateKeyPairSync('x25519')
+  const publicKeyRaw = Buffer.from((publicKey.export({ format: 'jwk' }) as { x: string }).x, 'base64url')
+  return new NodeCryptoProvider({ privateKey, publicKey, publicKeyRaw })
+}
+
+function makeWebCryptoProvider(): CryptoProvider {
+  const { secretKey, publicKey } = x25519.keygen()
+  const privateKey = Buffer.from(secretKey)
+  const publicKeyRaw = Buffer.from(publicKey)
+  return new WebCryptoProvider({ privateKey, publicKey: publicKeyRaw, publicKeyRaw })
+}
+
 /** Simulates the roster + KeyShare relay between a small set of in-process parties, without any real transport. */
 class Simulation {
   parties = new Map<string, Party>()
 
-  addParty(userId: string): Party {
-    const { privateKey, publicKey } = generateKeyPairSync('x25519')
-    const publicKeyRaw = Buffer.from(
-      (publicKey.export({ format: 'jwk' }) as { x: string }).x,
-      'base64url'
-    )
-    const crypto = new NodeCryptoProvider({ privateKey, publicKey, publicKeyRaw })
+  addParty(userId: string, platform: 'node' | 'web' = 'node'): Party {
+    const crypto = platform === 'node' ? makeNodeCryptoProvider() : makeWebCryptoProvider()
     const manager = new ChannelKeyManager({
       myUserId: userId,
       crypto,
@@ -135,6 +145,42 @@ describe('ChannelKeyManager', () => {
     expect(responsibleState?.epoch).toBe(1)
     expect(otherState?.epoch).toBe(1)
     expect(responsibleState?.key.equals(otherState?.key as Buffer)).toBe(true)
+    expect(responsibleState?.key.equals(created.key)).toBe(false)
+  })
+
+  it('shares channel keys correctly across mixed Node/noble parties, including through a rotation', () => {
+    // A desktop user (Node) creates the channel; a browser user (noble)
+    // joins it; a second browser user (noble) joins after that; then the
+    // desktop user departs and one of the two browser users must correctly
+    // take over rotation — proving the whole flow works with any mix of
+    // the two CryptoProvider implementations, not just same-platform pairs.
+    const desktopAlice = sim.addParty('alice', 'node') // departs
+    const browserBob = sim.addParty('bob', 'web')
+    const browserCarol = sim.addParty('carol', 'web')
+    sim.setMembers('#mixed', ['alice'])
+
+    const created = desktopAlice.manager.createChannel('#mixed')
+    desktopAlice.manager.wrapForNewMember('#mixed', 'bob')
+    sim.setMembers('#mixed', ['alice', 'bob'])
+    desktopAlice.manager.wrapForNewMember('#mixed', 'carol')
+    browserBob.manager.wrapForNewMember('#mixed', 'carol')
+
+    expect(browserBob.manager.getState('#mixed')?.key.equals(created.key)).toBe(true)
+    expect(browserCarol.manager.getState('#mixed')?.key.equals(created.key)).toBe(true)
+
+    // Alice (Node) departs; remaining roster is bob + carol, both noble.
+    sim.setMembers('#mixed', ['bob', 'carol'])
+    const lowestId = ['bob', 'carol'].sort()[0] as 'bob' | 'carol'
+    const responsible = lowestId === 'bob' ? browserBob : browserCarol
+    const other = lowestId === 'bob' ? browserCarol : browserBob
+
+    responsible.manager.onKeyRotationNotice('#mixed', 1)
+    other.manager.onKeyRotationNotice('#mixed', 1)
+
+    const responsibleState = responsible.manager.getState('#mixed')
+    const otherState = other.manager.getState('#mixed')
+    expect(responsibleState?.epoch).toBe(1)
+    expect(otherState?.key.equals(responsibleState?.key as Buffer)).toBe(true)
     expect(responsibleState?.key.equals(created.key)).toBe(false)
   })
 
