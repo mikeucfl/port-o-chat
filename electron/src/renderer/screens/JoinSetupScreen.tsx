@@ -5,6 +5,10 @@ import styles from './AuthLayout.module.css'
 
 export function JoinSetupScreen() {
   const { state, dispatch } = useStore()
+  // A browser tab can only ever join the server that served its own page —
+  // host/port are prefilled from the page's own origin (see web/config.ts)
+  // and can't usefully be changed, so this screen doesn't show them there.
+  const canHost = window.portochat.capabilities.canHost
   const [nickname, setNickname] = useState('')
   const [host, setHost] = useState('')
   const [port, setPort] = useState(String(DEFAULT_SERVER_PORT))
@@ -63,16 +67,19 @@ export function JoinSetupScreen() {
   return (
     <div className={styles.page}>
       <div className={styles.card}>
-        <button
-          className={styles.backLink}
-          onClick={() => dispatch({ type: 'SET_PHASE', phase: 'launch' })}
-        >
-          ← Back
-        </button>
-        <h1 className={styles.title}>Join a server</h1>
+        {canHost && (
+          <button
+            className={styles.backLink}
+            onClick={() => dispatch({ type: 'SET_PHASE', phase: 'launch' })}
+          >
+            ← Back
+          </button>
+        )}
+        <h1 className={styles.title}>{canHost ? 'Join a server' : 'Join this chat'}</h1>
         <p className={styles.subtitle}>
-          Connect to a Port-O-Chat server already running on your local network — one hosted by
-          this app, or by the browser-based client.
+          {canHost
+            ? 'Connect to a Port-O-Chat server already running on your local network — one hosted by this app, or by the browser-based client.'
+            : 'Pick a nickname to join.'}
         </p>
 
         <div className={styles.field}>
@@ -90,33 +97,35 @@ export function JoinSetupScreen() {
           />
         </div>
 
-        <div className={styles.row}>
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor="host">
-              Server address
-            </label>
-            <input
-              id="host"
-              className={styles.input}
-              value={host}
-              placeholder="192.168.1.42"
-              onChange={(e) => setHost(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
-            />
+        {canHost && (
+          <div className={styles.row}>
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor="host">
+                Server address
+              </label>
+              <input
+                id="host"
+                className={styles.input}
+                value={host}
+                placeholder="192.168.1.42"
+                onChange={(e) => setHost(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
+              />
+            </div>
+            <div className={styles.field} style={{ maxWidth: 110 }}>
+              <label className={styles.label} htmlFor="port">
+                Port
+              </label>
+              <input
+                id="port"
+                className={styles.input}
+                value={port}
+                onChange={(e) => setPort(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
+              />
+            </div>
           </div>
-          <div className={styles.field} style={{ maxWidth: 110 }}>
-            <label className={styles.label} htmlFor="port">
-              Port
-            </label>
-            <input
-              id="port"
-              className={styles.input}
-              value={port}
-              onChange={(e) => setPort(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
-            />
-          </div>
-        </div>
+        )}
 
         <button className={styles.primaryButton} onClick={handleJoin} disabled={busy}>
           {busy ? 'Connecting…' : 'Join'}

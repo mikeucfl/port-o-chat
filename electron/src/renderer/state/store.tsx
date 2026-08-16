@@ -12,6 +12,15 @@ const StoreContext = createContext<StoreContextValue | null>(null)
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState)
 
+  // A browser tab can only ever Join (never Host, and only the server that
+  // served its own page) — skip straight past the Host/Join choice screen
+  // rather than showing a screen with just one meaningful option on it.
+  useEffect(() => {
+    if (!window.portochat.capabilities.canHost) {
+      dispatch({ type: 'SET_PHASE', phase: 'joinSetup' })
+    }
+  }, [])
+
   useEffect(() => {
     const api = window.portochat
     const unsubscribers = [
