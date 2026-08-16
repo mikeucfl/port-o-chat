@@ -7,9 +7,18 @@ just as importantly — its explicit limitations. E2E is opt-in per channel
 and automatic (whenever possible) for DMs; it is entirely separate from,
 and supersedes the purpose of, the Java app's non-E2E transport encryption.
 
-Everything here is implemented with Node's built-in `crypto` module only —
-no hand-rolled primitives, no extra crypto dependencies. Source:
-[`src/main/crypto/`](../src/main/crypto/).
+Two implementations exist, kept byte-for-byte interoperable (proven in
+[`src/web/crypto/interop.test.ts`](../src/web/crypto/interop.test.ts), not
+just assumed): the Electron desktop build uses Node's built-in `crypto`
+module (source: [`src/main/crypto/`](../src/main/crypto/)); the browser
+build uses the audited pure-JS [`@noble/*`](https://paulmillr.com/noble/)
+libraries instead (source: [`src/web/crypto/`](../src/web/crypto/)) — see
+"Why noble instead of the browser's native crypto" below for why. No
+hand-rolled primitives on either side. Both implement the same
+`CryptoProvider` interface ([`src/core/cryptoProvider.ts`](../src/core/cryptoProvider.ts)),
+which is what the shared E2E policy logic
+([`src/core/chatController.ts`](../src/core/chatController.ts)) is written
+against — that logic runs unmodified on both platforms.
 
 ## Why this exists
 
@@ -22,11 +31,41 @@ plaintext exists only at the sending and receiving endpoints; the server
 only ever relays ciphertext (and, for channels, key material it cannot
 decode).
 
+## Why noble instead of the browser's native crypto
+
+The browser build could in principle use the Web Crypto API
+(`crypto.subtle`) instead of `@noble/*`. It doesn't, for a load-bearing
+reason, not a style preference: **`crypto.subtle` only exists in a Secure
+Context**, and this app's entire premise is serving a plain
+`http://<lan-ip>:3456` page from a box on the LAN — no TLS, no
+certificate, by design (see the README's LAN-first stance). That's not a
+secure context, so `crypto.subtle` would simply be `undefined` there —
+a `subtle`-based implementation would silently fail on exactly the
+deployment this feature exists for, and only work if someone happened to
+load the page over `localhost` or `https`. `crypto.getRandomValues`
+(what noble actually needs) carries no such restriction.
+
+Two secondary reasons reinforced the choice: `crypto.subtle` is
+Promise-only, which would have forced `ChatController`'s send/receive
+logic to become async and introduced message-reordering hazards that
+don't exist today (decrypt of message *n* resolving after message
+*n+1*); and native browser support for X25519 specifically (as opposed
+to AES-GCM/SHA-256, which are universally available via `subtle`) is
+still uneven across browsers. HKDF-SHA256, AES-256-GCM, and X25519 ECDH
+are all deterministic standards regardless of implementation, so a
+correct Node implementation and a correct noble implementation
+interoperate byte-for-byte given identical inputs — verified directly in
+`interop.test.ts`, not just assumed. The cost: pure-JS AES-GCM isn't
+constant-time and is slower than a native implementation, an accepted
+tradeoff for a LAN chat app's message sizes against a LAN-local
+adversary.
+
 ## Identity
 
-- Each client generates an X25519 keypair with `crypto.generateKeyPairSync('x25519')` once, at app launch.
-- Kept in a single main-process module closure ([`crypto/identity.ts`](../src/main/crypto/identity.ts)) — **in memory only**, never written to disk, never sent to the renderer. References are dropped on `before-quit` (best-effort; Node/V8 have no guaranteed secure-wipe primitive for `KeyObject`s, so this relies on garbage collection rather than an explicit zeroing guarantee).
-- The raw 32-byte public key (what actually goes on the wire, in `UserData.e2eIdentityKey`) is obtained via JWK export/import, since Node's `crypto` has no direct "give me the raw bytes" API for X25519 — JWK is the one format that exposes the key material directly rather than wrapping it in a DER/PEM envelope.
+- Each client generates an X25519 keypair once, per launch (desktop) or per page load (browser).
+  - **Desktop**: `crypto.generateKeyPairSync('x25519')`, kept in a single main-process module closure ([`crypto/identity.ts`](../src/main/crypto/identity.ts)) — **in memory only**, never written to disk, never sent to the renderer. References are dropped on `before-quit` (best-effort; Node/V8 have no guaranteed secure-wipe primitive for `KeyObject`s, so this relies on garbage collection rather than an explicit zeroing guarantee).
+  - **Browser**: `x25519.keygen()` from `@noble/curves` ([`web/crypto/identity.ts`](../src/web/crypto/identity.ts)) — also in memory only, held in a module-level variable for the page's lifetime. **Deliberately not persisted to `sessionStorage`**, even though that would survive a reload — some browsers write `sessionStorage` to disk for session-restore, outside this app's control, the same reasoning that already kept this app off OS toast notifications (see "Zero persistence" below). Every page reload regenerates a fresh identity, same as the desktop build regenerating on every launch — the practical cost is that other users will see a "safety number changed" warning after any reload of a browser tab they're talking to, since browser tabs get refreshed far more often than the desktop app gets restarted.
+- The raw 32-byte public key (what actually goes on the wire, in `UserData.e2eIdentityKey`) needs a JWK export/import round trip on the desktop build, since Node's `crypto` has no direct "give me the raw bytes" API for X25519 — JWK is the one format that exposes the key material directly rather than wrapping it in a DER/PEM envelope. Noble has no such gymnastics: it works with raw 32-byte keys natively, so the browser build's identity/ECDH code is noticeably simpler than the desktop equivalent despite doing the same thing.
 - Sent to the server via `Request{SetE2EPublicKey}` immediately after connecting, before announcing a username. The server distributes it to other clients by including it in the same `UserData` broadcasts it already sends (`UserConnectionStatus`, `UserList`) — no separate round trip.
 - A client with no identity key (i.e. an unmodified Java client) is simply not E2E-capable: DMs to/from it stay plaintext, and it's refused when trying to join an E2E channel (see PROTOCOL.md's `E2EChannelRequiresSupport`).
 
@@ -113,7 +152,7 @@ further bounds the number of messages ever encrypted under a single key.
 
 ## Trust and verification
 
-- **Safety number / fingerprint**: SHA-256 of the raw X25519 public key, first 16 bytes, formatted as 8 groups of 4 uppercase hex characters (`crypto/fingerprint.ts`). Shown per-peer (via the 🔑 button and member-list fingerprint dialog) so users can compare it with the peer over a channel they trust (in person, a voice call) — **without this step, the server operator could substitute a key at any point and neither party would know.**
+- **Safety number / fingerprint**: SHA-256 of the raw X25519 public key, first 16 bytes, formatted as 8 groups of 4 uppercase hex characters (`crypto/fingerprint.ts` on the desktop build, `web/crypto/fingerprint.ts` on the browser build — byte-identical output, see `interop.test.ts`). Shown per-peer (via the 🔑 button and member-list fingerprint dialog) so users can compare it with the peer over a channel they trust (in person, a voice call) — **without this step, the server operator could substitute a key at any point and neither party would know.**
 - **Trust-on-first-use (TOFU)**: the first identity key seen for a given user id is pinned for the session (in memory only, `crypto/trust.ts`). If a later key for that same user id differs, the UI shows a persistent warning banner and **outgoing E2E sends to that peer are blocked** until the user explicitly re-verifies the new safety number and clicks "Trust this key." Incoming messages under the new key can still be read (so the conversation isn't silently dropped), but the warning stays visible until acknowledged.
 - Pins are **not** persisted across restarts — every launch starts fresh, consistent with identity keys themselves being regenerated every launch. This means the app currently cannot detect a key change *across* two separate sessions, only *within* one — see Limitations.
 - **First-time verification nudge**: the first time a DM with a given peer becomes end-to-end encrypted in a session, a one-time banner prompts verifying their safety number — encryption happening automatically (see "Direct messages" above) shouldn't mean verification gets skipped entirely. Dismissible, and only shown once per peer per session (not persisted, same as everything else here); opening the safety-number dialog for that peer through any other path (the 🔑 button, the member list) also counts as having seen it.
@@ -152,4 +191,10 @@ for new messages (only a passive numeric unread badge on the taskbar/dock
 icon, which reveals a count and nothing else) — Windows Action Center and
 macOS Notification Center both retain their own history of any
 notification shown, outside this app's control, which would otherwise be
-an uncontrolled second place message content could end up living.
+an uncontrolled second place message content could end up living. The
+browser build's identity key follows the same reasoning: it lives in
+memory only and is never written to `sessionStorage`, even though that
+would survive a reload, since some browsers persist `sessionStorage` to
+disk for session-restore — see "Identity" above. The browser build's
+*nickname* (only) is persisted to `localStorage`, matching the desktop
+build's own narrow exception for the same non-secret field.

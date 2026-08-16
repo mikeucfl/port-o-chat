@@ -8,11 +8,41 @@ which parts are inherited from the Java app versus new in this port.
 
 Source of truth in this repo:
 - Schema: [`proto/portochat.proto`](../proto/portochat.proto)
-- Framing/codec: [`src/main/net/framing.ts`](../src/main/net/framing.ts), [`src/main/net/codec.ts`](../src/main/net/codec.ts)
+- Framing/codec: [`src/core/framing.ts`](../src/core/framing.ts), [`src/core/codec.ts`](../src/core/codec.ts)
 
 ## Transport
 
-TCP only, no UDP. No TLS. One message per frame, one frame per read.
+Two transports carry the identical framed bytes described below, demuxed
+from a single bound port (`src/main/net/hostServer.ts`):
+
+- **Raw TCP** — the original transport, for old Java clients and this
+  app's own server-side test tooling (`src/main/net/tcpClient.ts`). No
+  TLS, no UDP.
+- **WebSocket**, on the `/ws` path — for this app's own client (both
+  Electron, over the `ws` package, and the browser build, over the
+  native `WebSocket`) and any other browser-based client. WS is already
+  message-framed, but each binary WS message still carries the same
+  `[uint16 BE outerLen]`-prefixed bytes described below rather than
+  dropping the prefix — this keeps the framing/codec layer identical on
+  both transports instead of needing a WS-specific variant.
+
+`HostServer` decides which of the two a given connection is from the
+first byte it sends: a real Port-O-Chat frame's first byte is always
+`0x00` (the high byte of a `uint16` length for any real first message,
+which is always small — `SetE2EPublicKey`/`SetUserName`), so anything
+else is treated as an HTTP request (either a normal page load of the
+browser build's static assets, or a WebSocket upgrade request on `/ws`).
+This means `DEFAULT_SERVER_PORT` (3456) means "the Port-O-Chat port" for
+every kind of client — nothing needs a second port opened or forwarded.
+
+The Electron app's own client speaks WebSocket exclusively now (for both
+JOIN mode and the host's own loopback connection to its own server) — it
+no longer speaks raw TCP as a client, only as a server. This means it can
+no longer JOIN a server hosted by a standalone, unmodified Java app
+(which only ever speaks raw TCP) — a deliberate, accepted tradeoff. A
+server hosted *by this app* is unaffected either way: its raw-TCP
+listener is unchanged, so old Java clients can still join it normally.
+See [PORTING-NOTES.md](PORTING-NOTES.md).
 
 ## Wire framing
 
@@ -208,12 +238,16 @@ is already broadcast server-wide rather than just to members.
 ## Server state model
 
 In-memory only, dies with the process (`src/main/server/userRegistry.ts`,
-`channelRegistry.ts`). Mirrors the Java `UserDatabase`/`ChannelDatabase`
-semantics: a connection exists (and is addressable) from accept time, before
-any username is set; channels are created implicitly by the first join and
-torn down when the last member leaves; usernames are unique by exact string
-match. This app additionally tracks, per channel, whether it's E2E and its
-current key epoch (a number only — never the key itself).
+`channelRegistry.ts`, both owned by `src/main/server/chatCore.ts`). Mirrors
+the Java `UserDatabase`/`ChannelDatabase` semantics: a connection exists
+(and is addressable) from accept time, before any username is set; channels
+are created implicitly by the first join and torn down when the last member
+leaves; usernames are unique by exact string match. This app additionally
+tracks, per channel, whether it's E2E and its current key epoch (a number
+only — never the key itself). One `ChatCore` (registries + router) is
+shared by both the raw-TCP and WebSocket listeners, so a client connected
+via either transport lands in the same registries and sees the other
+normally — see the Transport section above.
 
 ## Known Java behaviors this app deliberately does not replicate
 

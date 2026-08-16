@@ -8,9 +8,11 @@ dropped, and the honest state of Java-interop testing.
 - **Wire framing and protobuf schema.** The `.proto` file was directly
   reusable; the outer length-prefix + legacy `DefaultData`/`ProtoMessage`
   header framing is fully reproduced byte-for-byte in
-  [`net/framing.ts`](../src/main/net/framing.ts) /
-  [`net/codec.ts`](../src/main/net/codec.ts). This is the reason the new
-  app can talk to an unmodified Java client or server at all.
+  [`core/framing.ts`](../src/core/framing.ts) /
+  [`core/codec.ts`](../src/core/codec.ts). This is the reason the new
+  app can talk to an unmodified Java client or server at all — and, later,
+  the reason the same framing carries over WebSocket unchanged too (see
+  "WebSocket transport and the browser client" below).
 - **Server state model.** In-memory-only user/channel registries, implicit
   channel creation on first join, teardown on last member leaving, exact-
   string username uniqueness — all carried over as-is
@@ -20,7 +22,7 @@ dropped, and the honest state of Java-interop testing.
   is a direct port of `Server.java`'s dispatch switch, including the
   ping/pong keepalive cadence (60s interval, 5s initial delay, 3-minute
   timeout) and the general shape of channel join/part/list handling.
-- **Client-side flow.** [`client/session.ts`](../src/main/client/session.ts)
+- **Client-side flow.** [`core/session.ts`](../src/core/session.ts)
   mirrors `ServerConnection.java`: connect, announce identity, set username,
   and the request/notification vocabulary for channels and chat.
 - **The `/me` and `/clear` local client commands** carried over into the
@@ -145,6 +147,66 @@ dropped, and the honest state of Java-interop testing.
   of this Electron app correctly see each other's renames live; a real Java
   client in the mix will not, for anyone it already had cached.
 
+## WebSocket transport and the browser client
+
+Added after the initial port, as a separate follow-on piece of work: a
+WebSocket listener alongside the original raw-TCP one, and a real
+browser-based client that reuses the entire existing React UI unmodified.
+See [PROTOCOL.md](PROTOCOL.md)'s Transport section for the wire-level
+details and [CRYPTO.md](CRYPTO.md) for the browser's E2E crypto.
+
+- **`src/core/` extraction.** The protocol/session logic and the E2E policy
+  (which channel is E2E, DM auto-encrypt, refuse-rather-than-downgrade,
+  TOFU blocking) were pulled out of the Electron-specific `SessionController`
+  into an isomorphic layer with no `node:*`/DOM imports —
+  [`core/chatController.ts`](../src/core/chatController.ts),
+  [`core/session.ts`](../src/core/session.ts), and a `CryptoProvider`
+  seam ([`core/cryptoProvider.ts`](../src/core/cryptoProvider.ts)) — so the
+  exact same logic runs in both the Electron main process and the browser
+  build, rather than existing as two copies that could silently drift
+  apart (drift in this specific code means a client sending plaintext it
+  thinks is encrypted).
+- **One port, demuxed.** Rather than a second port for HTTP/WebSocket,
+  `HostServer` decides per-connection from the first byte whether it's
+  raw TCP, a page load, or a WS upgrade — see PROTOCOL.md. A TCP peer and
+  a WS peer land in the same `ChatCore` (registries + router), proven with
+  real mixed-transport tests, not just asserted.
+- **The Electron client itself now speaks WebSocket**, not raw TCP, for
+  both JOIN mode and the host's own loopback connection — the same
+  transport the browser build uses. **This has a real, deliberate cost:**
+  the Electron client can no longer JOIN a server hosted by a standalone,
+  unmodified Java app, since Java only ever speaks raw TCP and this app's
+  client no longer does. Confirmed and accepted before implementation
+  began. The server side is unaffected: a server hosted *by this app*
+  still runs its original raw-TCP listener unchanged, so an old Java
+  client can still join it. `net/tcpClient.ts` (the old raw-TCP client) is
+  kept, not deleted — it's still used by
+  `scripts/verify-java-interop.ts` and the server's own TCP integration
+  tests, just no longer by the shipped app's own UI.
+- **A browser tab can never host** — categorically impossible, not a
+  missing feature, since a web page can never bind a listening socket for
+  others to connect to. `PortochatApi` gained a `capabilities: { canHost }`
+  field so the Launch screen simply doesn't offer Host in a browser,
+  rather than letting someone pick it and then explaining why it failed.
+- **The browser build has full E2E parity**, not a plaintext-only
+  fallback — its crypto runs on `@noble/*` instead of Node's `crypto`
+  module, chosen specifically because the browser's native `crypto.subtle`
+  requires a Secure Context and this app's whole point is serving plain
+  `http://<lan-ip>` with no TLS (see CRYPTO.md for the full reasoning).
+  The two implementations are proven byte-for-byte interoperable in
+  `src/web/crypto/interop.test.ts`, including a mixed-platform channel-key
+  rotation scenario in `channelKeyManager.test.ts` (a desktop creator, two
+  browser joiners, then a rotation handoff between the two browser
+  parties).
+- **A real, previously-unnoticed gap this work surfaced**: `ChatController`'s
+  DM auto-encrypt check only ever looked at whether the *recipient* had an
+  announced identity key, never whether the local `CryptoProvider` itself
+  had one — harmless before now, since every platform (only ever the
+  Electron main process) always had an identity. Adding a platform that
+  could legitimately have none (the browser build, transiently, before its
+  crypto backend was wired up) surfaced it; fixed with an explicit guard
+  and a regression test.
+
 ## What was deliberately dropped or scoped out
 
 - **The Java app's RSA+AES transport encryption** (`SetUserPublicKey` /
@@ -220,29 +282,29 @@ dropped, and the honest state of Java-interop testing.
 
 Ideas raised during this port that are explicitly **not implemented** —
 listed here so the reasoning doesn't get lost, not because any of this is
-planned or in progress.
+planned or in progress. (A browser-based client was raised here too,
+originally — it's since been built; see "WebSocket transport and the
+browser client" above.)
 
-- **A browser-based client.** Nothing in this project currently runs in a
-  browser tab, and it's not just a hosting/deployment question — it's a
-  protocol mismatch. The wire protocol is raw TCP (Node's `net` module);
-  browsers cannot open raw TCP sockets or bind a listening TCP server at
-  all, full stop, on any OS. Only this Electron app and the original Java
-  app can talk to a hosted server today, because both speak raw TCP
-  directly. A browser client would require: a genuinely separate web
-  client (not this Electron app, since the renderer does nothing without
-  Electron's `contextBridge`), a WebSocket gateway in front of (or built
-  into) the existing server translating WS traffic into the same protobuf
-  messages, and the E2E crypto reimplemented against the browser's Web
-  Crypto API instead of Node's `crypto` module (the primitives — X25519,
-  AES-GCM, HKDF — are available in both, but the APIs aren't a drop-in
-  match). Somewhat more approachable than it sounds, since `server/router.ts`
-  already only depends on the transport-agnostic `PeerConnection` interface
-  (see `server/peer.ts`) specifically so it doesn't care whether the other
-  end is a raw TCP socket or something else — but it's still a new client
-  stack, not a small addition. **A browser tab could also never be the one
-  doing the hosting** — that's not a missing feature, it's categorically
-  impossible for any browser page to bind a listening socket that other
-  computers connect to.
+- **Cross-server joining from the browser build.** The WS Origin check
+  (see PROTOCOL.md/CRYPTO.md's hardening notes) only allows a browser tab
+  to connect back to the exact server that served its page — typing a
+  *different* host:port into the Join screen from a browser tab is
+  rejected. Supporting that would need a deliberately looser (and
+  correspondingly more carefully considered) Origin policy.
+- **TLS / `wss://`.** Everything on the wire except E2E payloads is
+  plaintext, same as the original TCP-only design. Without it, the
+  browser build can never run in a Secure Context, which is also why it
+  uses `@noble/*` instead of `crypto.subtle` — see CRYPTO.md.
+- **Auto-reconnect on a dropped WebSocket.** Neither the desktop nor
+  browser client reconnects automatically today — a drop surfaces as
+  "disconnected" and the user retries explicitly, same as the original
+  TCP-only design. A browser tab is more likely to hit a transient drop
+  (laptop sleep, Wi-Fi roam) than a desktop app, so this matters more
+  here than it used to, but hasn't been built.
+- **Responsive/mobile layout for the browser build.** The UI is desktop-
+  oriented; it loads and mostly works on a phone browser but nothing was
+  designed for it.
 
 ## Java interop — honest status
 
@@ -288,25 +350,43 @@ fields still decode cleanly under protobuf3's unknown-field skipping.
 
 ## Verification performed
 
-- 63 automated tests covering the framing/codec byte formulas (including
-  hostile-input/corruption cases), the crypto primitives (ECDH determinism,
-  AEAD round-trip and tamper detection, fingerprint determinism, the
-  channel-key join and rotation coordination flows simulated across
-  multiple in-process parties), and the server router (username collisions,
-  implicit channel lifecycle, E2E join refusal, and regression tests for
-  all three fixed Java bugs).
-- A real end-to-end networking test: an actual `TcpChatServer` bound to a
-  real loopback TCP port, with two real `TcpClient` connections exchanging
-  a channel message and a DM, plus `EADDRINUSE` and malformed-frame
-  handling — all over genuine sockets, not mocks.
-- A full production build (`electron-vite build`) and a packaged Windows
-  installer (`npm run build` → `release/Port-O-Chat-1.0.0-x64.exe`) both
-  succeed.
-- **Not yet performed by the developer of this port**: actually launching
-  the built app's GUI and driving a real two-window (host + join) session
-  by hand. The development environment used for this port runs with
-  `ELECTRON_RUN_AS_NODE=1` set, which forces any Electron binary launched
-  from that shell to run as plain Node with no window — so this specific
-  environment cannot pop a real `BrowserWindow` to click through. This is
-  flagged rather than glossed over; see the README's "Verifying this build
-  yourself" section for the exact steps to run that check.
+- 107 automated tests covering the framing/codec byte formulas (including
+  hostile-input/corruption cases), the crypto primitives on both platforms
+  (ECDH determinism, AEAD round-trip and tamper detection, fingerprint
+  determinism, the channel-key join and rotation coordination flows
+  simulated across multiple in-process parties — including a mixed
+  Node/noble scenario), a dedicated Node↔noble byte-level interop suite,
+  the E2E policy logic in `ChatController` (E2E-channel refusal before key
+  arrival, DM auto-encrypt/plaintext-fallback, TOFU blocking, decrypt-
+  failure surfacing), and the server router (username collisions, implicit
+  channel lifecycle, E2E join refusal, and regression tests for all three
+  fixed Java bugs).
+- Real end-to-end networking tests, all over genuine sockets, never mocks:
+  an actual `HostServer` bound to a real loopback port, with real
+  `TcpClient` and real `ws`-based WebSocket connections exchanging a
+  channel message and a DM (including a **mixed** case — a TCP peer and a
+  WS peer in the same channel see each other, the load-bearing proof the
+  two transports share one `ChatCore`); `EADDRINUSE` and malformed-frame
+  handling on both transports; the WS Origin allowlist (accepted with no
+  header, accepted same-origin, rejected foreign); an oversized WS message
+  being rejected; and static file serving from a real temp directory,
+  including a path-traversal attempt provably never leaking a file outside
+  `webRoot`.
+- A full production build of both targets — `electron-vite build` (main/
+  preload/renderer) and `vite build -c vite.web.config.ts` (the browser
+  client, verified with `npm run build:web`) — both succeed, and the
+  built browser bundle was confirmed (via a real headless `HostServer` and
+  `curl`) to serve correctly with zero leaked `node:` imports despite
+  pulling in three new crypto dependencies.
+- **Not yet performed by the developer of this work**: actually launching
+  the built desktop app's GUI, or loading the browser build in a real
+  browser with JavaScript executing, and driving a real multi-party
+  session by hand (desktop host + desktop join + browser join, mixing
+  plaintext and E2E channels). The development environment used for this
+  work runs with `ELECTRON_RUN_AS_NODE=1` set, which forces any Electron
+  binary launched from that shell to run as plain Node with no window —
+  so this specific environment cannot pop a real `BrowserWindow`, and
+  while the browser build's *serving* was verified over real HTTP
+  requests, no actual browser ever rendered or executed it here either.
+  This is flagged rather than glossed over; see the README's "Verifying
+  this build yourself" section for the exact steps to run that check.
