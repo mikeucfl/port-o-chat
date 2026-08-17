@@ -53,7 +53,7 @@ export function ChannelTopicBar({
         setEditing(true)
       }}
     >
-      {topic || (canEdit ? 'No topic set — click to add one' : '')}
+      {topic ? `Topic: ${topic}` : canEdit ? 'No topic set — click to add one' : ''}
     </div>
   )
 }

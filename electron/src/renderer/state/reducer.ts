@@ -94,7 +94,10 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case 'USER_CONNECTION_STATUS': {
       const users = { ...state.users, [action.event.user.id]: action.event.user }
-      return { ...state, users }
+      const offlineUserIds = action.event.connected
+        ? omitKey(state.offlineUserIds, action.event.user.id)
+        : { ...state.offlineUserIds, [action.event.user.id]: true as const }
+      return { ...state, users, offlineUserIds }
     }
 
     case 'CHANNEL_LIST': {

@@ -97,7 +97,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!info) break
       try {
         await window.portochat.clientConnect(info.host, info.port, info.password)
+        // clientConnect only resolves once the transport is up — it does NOT
+        // mean the password or the nickname was actually accepted (see its
+        // docstring in ipc-contract.ts). Waiting for the real verdicts here
+        // (rather than firing setNickname and declaring victory) is what
+        // stops a stale/incorrect remembered password from silently landing
+        // in a half-connected state that looks fine but never joined.
+        const passwordOk = await new Promise<boolean>((resolve) => {
+          const unsubscribe = window.portochat.onPasswordResult((result) => {
+            unsubscribe()
+            resolve(result.success)
+          })
+        })
+        if (!passwordOk) throw new Error('Incorrect password')
+
         await window.portochat.setNickname(latestRef.current.nickname)
+        const nameOk = await new Promise<boolean>((resolve) => {
+          const unsubscribe = window.portochat.onNameResult((result) => {
+            unsubscribe()
+            resolve(result.success)
+          })
+        })
+        if (!nameOk) throw new Error('Nickname rejected')
+
         // Best-effort: rejoin whatever channels were open. The server has
         // no memory of our old membership — a fresh connection is a fresh
         // join, same as any other client's first time.

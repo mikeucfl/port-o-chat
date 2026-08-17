@@ -58,6 +58,8 @@ export interface AppState {
   myNickname: string
   hostInfo?: { port: number; lanAddresses: string[] }
   users: Record<string, UserDto>
+  /** userId -> true for users we've been told disconnected but who still linger in `users` (e.g. still shown in an open DM). Absence means online. */
+  offlineUserIds: Record<string, true>
   channels: Record<string, ChannelDto>
   channelMembers: Record<string, string[]>
   openConversations: ConversationRef[]
@@ -92,6 +94,7 @@ export const initialState: AppState = {
   myUserId: null,
   myNickname: '',
   users: {},
+  offlineUserIds: {},
   channels: {},
   channelMembers: {},
   openConversations: [],

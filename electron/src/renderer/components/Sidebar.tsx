@@ -114,6 +114,7 @@ export function Sidebar({
           const active = activeKey === key
           const warned = !!state.peerKeyWarnings[user.id]
           const unread = state.unreadCounts[key] ?? 0
+          const offline = !!state.offlineUserIds[user.id]
           return (
             <button
               key={user.id}
@@ -122,8 +123,11 @@ export function Sidebar({
               }`}
               onClick={() => openDm(user.id)}
             >
-              <span className={styles.onlineDot} />
-              <span className={styles.itemName}>{user.name}</span>
+              <span className={offline ? styles.offlineDot : styles.onlineDot} />
+              <span className={`${styles.itemName} ${offline ? styles.itemOffline : ''}`}>
+                {user.name}
+                {offline && ' (disconnected)'}
+              </span>
               {warned && <span title="Key changed — unverified">⚠</span>}
               {user.e2eCapable && !warned && <span className={styles.lockIcon}>🔒</span>}
               <UnreadBadge count={unread} />
