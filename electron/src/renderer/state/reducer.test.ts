@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import type { ChatMessageDto } from '@shared/protocolTypes'
+import type { ChatMessageDto, UserDto } from '@shared/protocolTypes'
 import { reducer } from './reducer'
 import { conversationKey, initialState, type AppState } from './types'
 
 function baseState(overrides: Partial<AppState> = {}): AppState {
   return { ...initialState, myUserId: 'me', phase: 'chat', connection: 'connected', ...overrides }
+}
+
+function userDto(overrides: Partial<UserDto> = {}): UserDto {
+  return { id: 'u1', name: 'mike', host: '127.0.0.1', e2eCapable: false, ...overrides }
 }
 
 function msg(overrides: Partial<ChatMessageDto> = {}): ChatMessageDto {
@@ -135,6 +139,48 @@ describe('reconnect', () => {
     expect(next.reconnectStatus).toBe('idle')
     expect(next.reconnectAttempt).toBe(0)
     expect(next.phase).toBe('launch')
+  })
+})
+
+describe('user connection status', () => {
+  it('tracks a disconnected user as offline without dropping them from the list', () => {
+    const state = baseState({ users: { u1: userDto({ id: 'u1' }) } })
+    const next = reducer(state, {
+      type: 'USER_CONNECTION_STATUS',
+      event: { user: userDto({ id: 'u1' }), connected: false }
+    })
+    expect(next.users['u1']).toBeDefined()
+    expect(next.offlineUserIds['u1']).toBe(true)
+  })
+
+  it('reconnecting under a new id drops the old offline entry for the same name (no duplicate "mike"s)', () => {
+    let state = baseState({ users: { u1: userDto({ id: 'u1', name: 'mike' }) } })
+    state = reducer(state, {
+      type: 'USER_CONNECTION_STATUS',
+      event: { user: userDto({ id: 'u1', name: 'mike' }), connected: false }
+    })
+    expect(state.offlineUserIds['u1']).toBe(true)
+
+    // Server restart: same person reconnects and gets a fresh id.
+    const next = reducer(state, {
+      type: 'USER_CONNECTION_STATUS',
+      event: { user: userDto({ id: 'u2', name: 'mike' }), connected: true }
+    })
+    expect(next.users['u1']).toBeUndefined()
+    expect(next.offlineUserIds['u1']).toBeUndefined()
+    expect(next.users['u2']).toBeDefined()
+    expect(next.offlineUserIds['u2']).toBeUndefined()
+    expect(Object.keys(next.users)).toEqual(['u2'])
+  })
+
+  it('does not touch a same-named entry that is still online (server already guarantees uniqueness, so this should never happen, but stay conservative)', () => {
+    const state = baseState({ users: { u1: userDto({ id: 'u1', name: 'mike' }) } })
+    const next = reducer(state, {
+      type: 'USER_CONNECTION_STATUS',
+      event: { user: userDto({ id: 'u2', name: 'mike' }), connected: true }
+    })
+    expect(next.users['u1']).toBeDefined()
+    expect(next.users['u2']).toBeDefined()
   })
 })
 

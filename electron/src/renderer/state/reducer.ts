@@ -94,10 +94,30 @@ export function reducer(state: AppState, action: Action): AppState {
     }
 
     case 'USER_CONNECTION_STATUS': {
-      const users = { ...state.users, [action.event.user.id]: action.event.user }
-      const offlineUserIds = action.event.connected
-        ? omitKey(state.offlineUserIds, action.event.user.id)
-        : { ...state.offlineUserIds, [action.event.user.id]: true as const }
+      const incoming = action.event.user
+      const users = { ...state.users }
+      const offlineUserIds = { ...state.offlineUserIds }
+
+      // User ids are per-connection, not per-person — reconnecting (e.g.
+      // the server restarting) gets a brand-new id. The server only ever
+      // lets one currently-connected user hold a given name at a time, so
+      // if someone's coming online under a name we already have a
+      // *different*, offline id for, that offline entry is a stale ghost
+      // of this same person's previous connection — drop it instead of
+      // showing both an online and a "(disconnected)" row for one person.
+      if (action.event.connected) {
+        for (const [id, u] of Object.entries(users)) {
+          if (id !== incoming.id && u.name === incoming.name && offlineUserIds[id]) {
+            delete users[id]
+            delete offlineUserIds[id]
+          }
+        }
+      }
+
+      users[incoming.id] = incoming
+      if (action.event.connected) delete offlineUserIds[incoming.id]
+      else offlineUserIds[incoming.id] = true
+
       return { ...state, users, offlineUserIds }
     }
 
