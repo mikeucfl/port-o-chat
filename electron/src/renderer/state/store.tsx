@@ -160,6 +160,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.reconnectNonce])
 
+  // Keeps --app-height (see global.css) in sync with the actually-visible
+  // viewport — only matters on phones, where the on-screen keyboard
+  // shrinks this without the layout viewport (height: 100%'s reference)
+  // ever changing.
+  useEffect(() => {
+    const vv = window.visualViewport
+    function updateAppHeight(): void {
+      const height = vv?.height ?? window.innerHeight
+      document.documentElement.style.setProperty('--app-height', `${height}px`)
+    }
+    updateAppHeight()
+    vv?.addEventListener('resize', updateAppHeight)
+    window.addEventListener('resize', updateAppHeight)
+    return () => {
+      vv?.removeEventListener('resize', updateAppHeight)
+      window.removeEventListener('resize', updateAppHeight)
+    }
+  }, [])
+
   // Drives unread tracking: an unfocused window still accumulates unread
   // for the open conversation, same as Discord/Slack (see reducer.ts).
   useEffect(() => {

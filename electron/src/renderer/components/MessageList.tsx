@@ -51,15 +51,44 @@ export function MessageList({
   /** clientMessageId of the first unread message, if any — renders a "New Messages" divider right before it. */
   firstUnreadMessageId?: string
 }) {
+  const listRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  // Discord-style "stuck to bottom": true as long as the user hasn't
+  // scrolled up to read history. Only auto-scrolls on new messages while
+  // this holds, instead of always yanking the view down regardless of
+  // where they were reading.
+  const stickToBottomRef = useRef(true)
   const [pendingLink, setPendingLink] = useState<string | null>(null)
 
+  function handleScroll(): void {
+    const el = listRef.current
+    if (!el) return
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    stickToBottomRef.current = distanceFromBottom < 80
+  }
+
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ block: 'end' })
+    if (stickToBottomRef.current) bottomRef.current?.scrollIntoView({ block: 'end' })
   }, [messages.length])
 
+  // A mobile on-screen keyboard opening/closing shrinks the *visual*
+  // viewport (and so this list's available height) without any new
+  // message arriving to trigger the effect above — left unhandled, a
+  // "stuck to bottom" view silently stops being at the bottom the moment
+  // the keyboard animates, and the next message looks like it scrolled
+  // away until you scroll back down manually.
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    function onResize(): void {
+      if (stickToBottomRef.current) bottomRef.current?.scrollIntoView({ block: 'end' })
+    }
+    vv.addEventListener('resize', onResize)
+    return () => vv.removeEventListener('resize', onResize)
+  }, [])
+
   return (
-    <div className={styles.list}>
+    <div className={styles.list} ref={listRef} onScroll={handleScroll}>
       {messages.map((message, i) => {
         const isMine = message.senderId === myUserId
         const senderName = isMine ? 'You' : (users[message.senderId]?.name ?? 'Unknown user')

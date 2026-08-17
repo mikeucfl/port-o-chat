@@ -30,6 +30,18 @@ body,
   margin: 0;
 }
 
+/* iOS Safari doesn't shrink the layout viewport (what % heights resolve
+   against) when the on-screen keyboard opens — only the visual one — so
+   a plain height:100% just sits under the keyboard instead of making
+   room for it. --app-height is kept in sync with the real visible
+   height by store.tsx and only takes over here, under phone width;
+   desktop has no on-screen keyboard to compensate for. */
+@media (max-width: 600px) {
+  #root {
+    height: var(--app-height, 100%);
+  }
+}
+
 body {
   background: var(--bg-base);
   color: var(--text-primary);
