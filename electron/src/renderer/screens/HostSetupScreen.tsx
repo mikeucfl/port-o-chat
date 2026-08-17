@@ -57,6 +57,7 @@ export function HostSetupScreen() {
       // The host authenticates to its own server with the same password it
       // just set — no separate prompt for yourself.
       await window.portochat.clientConnect('127.0.0.1', boundPortRef.current, password)
+      dispatch({ type: 'SET_CONNECTION_INFO', host: '127.0.0.1', port: boundPortRef.current, password })
       await window.portochat.setNickname(trimmedName)
       await window.portochat.setConfig({ lastNickname: trimmedName, lastPort: boundPortRef.current })
     } catch (err) {

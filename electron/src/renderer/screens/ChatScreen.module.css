@@ -45,6 +45,29 @@
   background: rgba(0, 0, 0, 0.15);
 }
 
+.reconnectBanner {
+  flex-shrink: 0;
+  background: rgba(237, 66, 69, 0.15);
+  border-bottom: 1px solid var(--danger);
+  padding: 8px 20px;
+  font-size: 12px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.reconnectButton {
+  background: var(--danger);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 .layout {
   flex: 1;
   min-height: 0;

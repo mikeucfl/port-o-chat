@@ -9,7 +9,7 @@ import { MemberList } from '../components/MemberList'
 import { MessageList } from '../components/MessageList'
 import { Sidebar } from '../components/Sidebar'
 import { VerifyNudgeBanner } from '../components/VerifyNudgeBanner'
-import { useStore } from '../state/store'
+import { MAX_RECONNECT_ATTEMPTS, useStore } from '../state/store'
 import { conversationKey } from '../state/types'
 import styles from './ChatScreen.module.css'
 
@@ -91,6 +91,28 @@ export function ChatScreen() {
 
   return (
     <div className={styles.page}>
+      {state.connection !== 'connected' && (
+        <div className={styles.reconnectBanner}>
+          {state.reconnectStatus === 'exhausted' ? (
+            <>
+              <span>Couldn't reconnect to the server.</span>
+              <button
+                className={styles.reconnectButton}
+                onClick={() => dispatch({ type: 'MANUAL_RECONNECT' })}
+              >
+                Retry
+              </button>
+            </>
+          ) : (
+            <span>
+              Disconnected from server — reconnecting
+              {state.reconnectAttempt > 0 &&
+                ` (attempt ${state.reconnectAttempt}/${MAX_RECONNECT_ATTEMPTS})`}
+              …
+            </span>
+          )}
+        </div>
+      )}
       {state.hostInfo && (
         <div className={styles.hostBanner}>
           <span className={styles.hostBannerStrong}>Hosting</span>

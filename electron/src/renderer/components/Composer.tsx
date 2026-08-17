@@ -7,9 +7,14 @@ import styles from './Composer.module.css'
 const MAX_TEXTAREA_HEIGHT_PX = 160
 
 export function Composer({ target, placeholder }: { target: ConversationRef; placeholder: string }) {
-  const { dispatch } = useStore()
+  const { state, dispatch } = useStore()
   const [text, setText] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  // Sending while disconnected used to silently vanish — the transport
+  // layer no-ops a send() when not connected (see net/wsClient.ts), with
+  // no error surfaced. Blocking it here instead, with a visible reason,
+  // rather than letting the text just disappear.
+  const connected = state.connection === 'connected'
 
   // Auto-grows with content up to a cap, then scrolls — a plain <input>
   // can't hold a newline at all, so multi-line (Shift+Enter) messages
@@ -30,6 +35,8 @@ export function Composer({ target, placeholder }: { target: ConversationRef; pla
       setText('')
       return
     }
+
+    if (!connected) return
 
     const isAction = raw === '/me' || raw.startsWith('/me ')
     const message = isAction ? raw.replace(/^\/me\s?/, '') : raw
@@ -56,7 +63,7 @@ export function Composer({ target, placeholder }: { target: ConversationRef; pla
           rows={1}
           value={text}
           maxLength={MAX_MESSAGE_TEXT_LENGTH}
-          placeholder={placeholder}
+          placeholder={connected ? placeholder : "Disconnected — can't send right now"}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -66,7 +73,11 @@ export function Composer({ target, placeholder }: { target: ConversationRef; pla
           }}
           autoFocus
         />
-        <button className={styles.sendButton} onClick={handleSubmit} disabled={!text.trim()}>
+        <button
+          className={styles.sendButton}
+          onClick={handleSubmit}
+          disabled={!text.trim() || !connected}
+        >
           Send
         </button>
       </div>

@@ -36,10 +36,24 @@ export function isBeingActivelyViewed(state: AppState, key: string): boolean {
   )
 }
 
+export interface ConnectionInfo {
+  host: string
+  port: number
+  password: string
+}
+
+export type ReconnectStatus = 'idle' | 'reconnecting' | 'exhausted'
+
 export interface AppState {
   phase: Phase
   connection: 'disconnected' | 'connecting' | 'connected'
   connectionError?: string
+  /** Set once a connect attempt is made, so an unexpected drop can be retried against the same server without the user re-typing anything. Not cleared on disconnect — only on RESET_SESSION (an intentional disconnect). */
+  connectionInfo: ConnectionInfo | null
+  reconnectStatus: ReconnectStatus
+  reconnectAttempt: number
+  /** Bumped to make the manual "Retry" button re-trigger the reconnect effect after MAX_RECONNECT_ATTEMPTS is reached — see store.tsx. */
+  reconnectNonce: number
   myUserId: string | null
   myNickname: string
   hostInfo?: { port: number; lanAddresses: string[] }
@@ -71,6 +85,10 @@ export interface AppState {
 export const initialState: AppState = {
   phase: 'launch',
   connection: 'disconnected',
+  connectionInfo: null,
+  reconnectStatus: 'idle',
+  reconnectAttempt: 0,
+  reconnectNonce: 0,
   myUserId: null,
   myNickname: '',
   users: {},

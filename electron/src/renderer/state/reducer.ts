@@ -11,6 +11,7 @@ import {
   type AppState,
   type ConversationRef,
   type Phase,
+  type ReconnectStatus,
   conversationKey,
   conversationRefForMessage,
   initialState,
@@ -35,6 +36,9 @@ export type Action =
   | { type: 'CLOSE_CONVERSATION'; ref: ConversationRef }
   | { type: 'NAME_RESULT'; success: boolean; name: string }
   | { type: 'PASSWORD_RESULT'; success: boolean }
+  | { type: 'SET_CONNECTION_INFO'; host: string; port: number; password: string }
+  | { type: 'RECONNECT_STATUS'; status: ReconnectStatus; attempt: number }
+  | { type: 'MANUAL_RECONNECT' }
   | { type: 'GENERAL_ERROR'; message: string }
   | { type: 'CLEAR_GENERAL_ERROR' }
   | { type: 'PEER_KEY_CHANGED'; event: PeerKeyChangedEvent }
@@ -229,6 +233,18 @@ export function reducer(state: AppState, action: Action): AppState {
       // clear to try a username now" (see ChatController.connect's
       // docstring for why the two are separate steps).
       return { ...state, passwordError: action.success ? null : 'Incorrect password.' }
+
+    case 'SET_CONNECTION_INFO':
+      return {
+        ...state,
+        connectionInfo: { host: action.host, port: action.port, password: action.password }
+      }
+
+    case 'RECONNECT_STATUS':
+      return { ...state, reconnectStatus: action.status, reconnectAttempt: action.attempt }
+
+    case 'MANUAL_RECONNECT':
+      return { ...state, reconnectNonce: state.reconnectNonce + 1 }
 
     case 'GENERAL_ERROR':
       return { ...state, generalError: action.message }

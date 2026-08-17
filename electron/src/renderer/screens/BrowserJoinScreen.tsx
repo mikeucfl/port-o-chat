@@ -17,7 +17,7 @@ import styles from './AuthLayout.module.css'
  * for the server's verdict instead.
  */
 export function BrowserJoinScreen() {
-  const { state } = useStore()
+  const { state, dispatch } = useStore()
   const [step, setStep] = useState<'password' | 'nickname'>('password')
   const [password, setPassword] = useState('')
   const [nickname, setNickname] = useState('')
@@ -37,8 +37,11 @@ export function BrowserJoinScreen() {
     setBusy(true)
     setError(null)
     const { lastHost, lastPort } = await window.portochat.getConfig()
+    const host = lastHost ?? ''
+    const port = lastPort ?? 0
     try {
-      await window.portochat.clientConnect(lastHost ?? '', lastPort ?? 0, password)
+      await window.portochat.clientConnect(host, port, password)
+      dispatch({ type: 'SET_CONNECTION_INFO', host, port, password })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not connect.')
       setBusy(false)

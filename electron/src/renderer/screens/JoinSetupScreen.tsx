@@ -69,6 +69,7 @@ function DesktopJoinForm({
     setError(null)
     try {
       await window.portochat.clientConnect(trimmedHost, portNumber, password)
+      dispatch({ type: 'SET_CONNECTION_INFO', host: trimmedHost, port: portNumber, password })
       await window.portochat.setNickname(trimmedName)
       await window.portochat.setConfig({
         lastNickname: trimmedName,

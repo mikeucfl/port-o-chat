@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useReducer, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useReducer, useRef, type ReactNode } from 'react'
 import { reducer, type Action } from './reducer'
 import { type AppState, initialState } from './types'
 
@@ -8,6 +8,9 @@ interface StoreContextValue {
 }
 
 const StoreContext = createContext<StoreContextValue | null>(null)
+
+/** Capped, exponentially-backed-off auto-reconnect attempts before requiring a manual "Retry" click — see the reconnect effect below. */
+export const MAX_RECONNECT_ATTEMPTS = 5
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState)
@@ -48,6 +51,92 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     ]
     return () => unsubscribers.forEach((unsub) => unsub())
   }, [])
+
+  // ---- auto-reconnect on an unexpected disconnect ----------------------
+  //
+  // Reacts directly to the raw connectionStatus event stream rather than to
+  // derived state.connection — the reconnect loop's own clientConnect calls
+  // cause connection to cycle through 'connecting'/'disconnected' itself,
+  // which would retrigger a state-dependency-based effect and reset the
+  // attempt counter every cycle instead of ever backing off or exhausting.
+  // reconnectingRef is a mutex so that churn doesn't start a second loop;
+  // latestRef keeps the fields the loop needs current without depending on
+  // them (so a stale closure from an earlier render is never used).
+  const reconnectingRef = useRef(false)
+  const cancelledRef = useRef(false)
+  const latestRef = useRef({
+    phase: state.phase,
+    connectionInfo: state.connectionInfo,
+    nickname: state.myNickname,
+    openConversations: state.openConversations,
+    channels: state.channels
+  })
+  useEffect(() => {
+    latestRef.current = {
+      phase: state.phase,
+      connectionInfo: state.connectionInfo,
+      nickname: state.myNickname,
+      openConversations: state.openConversations,
+      channels: state.channels
+    }
+    // Leaving the 'chat' phase only ever happens via an intentional
+    // disconnect (RESET_SESSION) or a successful NAME_RESULT into it — stop
+    // any in-flight retry loop rather than fighting the user's own action.
+    if (state.phase !== 'chat') cancelledRef.current = true
+  })
+
+  async function startReconnecting(): Promise<void> {
+    if (reconnectingRef.current) return
+    reconnectingRef.current = true
+    cancelledRef.current = false
+
+    for (let attempt = 1; attempt <= MAX_RECONNECT_ATTEMPTS; attempt++) {
+      if (cancelledRef.current) break
+      dispatch({ type: 'RECONNECT_STATUS', status: 'reconnecting', attempt })
+      const info = latestRef.current.connectionInfo
+      if (!info) break
+      try {
+        await window.portochat.clientConnect(info.host, info.port, info.password)
+        await window.portochat.setNickname(latestRef.current.nickname)
+        // Best-effort: rejoin whatever channels were open. The server has
+        // no memory of our old membership — a fresh connection is a fresh
+        // join, same as any other client's first time.
+        for (const ref of latestRef.current.openConversations) {
+          if (ref.type === 'channel') {
+            window.portochat.joinChannel(ref.name, latestRef.current.channels[ref.name]?.e2e ?? false)
+          }
+        }
+        dispatch({ type: 'RECONNECT_STATUS', status: 'idle', attempt: 0 })
+        reconnectingRef.current = false
+        return
+      } catch {
+        if (cancelledRef.current) break
+        const delayMs = Math.min(1000 * 2 ** (attempt - 1), 10000)
+        await new Promise((resolve) => setTimeout(resolve, delayMs))
+      }
+    }
+    if (!cancelledRef.current) {
+      dispatch({ type: 'RECONNECT_STATUS', status: 'exhausted', attempt: MAX_RECONNECT_ATTEMPTS })
+    }
+    reconnectingRef.current = false
+  }
+
+  useEffect(() => {
+    return window.portochat.onConnectionStatus((event) => {
+      if (event.state !== 'disconnected') return
+      if (latestRef.current.phase !== 'chat' || !latestRef.current.connectionInfo) return
+      void startReconnecting()
+    })
+  }, [])
+
+  // Lets the "Retry" button (shown once MAX_RECONNECT_ATTEMPTS is
+  // exhausted) kick off a fresh attempt sequence directly, without waiting
+  // for another connectionStatus event.
+  useEffect(() => {
+    if (state.reconnectNonce === 0) return
+    if (state.connection === 'disconnected' && state.phase === 'chat') void startReconnecting()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.reconnectNonce])
 
   // Drives unread tracking: an unfocused window still accumulates unread
   // for the open conversation, same as Discord/Slack (see reducer.ts).

@@ -95,6 +95,49 @@ describe('unread tracking', () => {
   })
 })
 
+describe('reconnect', () => {
+  it('remembers connection info so a later unexpected drop can be retried without re-prompting', () => {
+    const state = baseState()
+    const next = reducer(state, {
+      type: 'SET_CONNECTION_INFO',
+      host: '192.168.1.5',
+      port: 3456,
+      password: 'hunter2'
+    })
+    expect(next.connectionInfo).toEqual({ host: '192.168.1.5', port: 3456, password: 'hunter2' })
+  })
+
+  it('tracks reconnect attempts and clears back to idle on success', () => {
+    let state = baseState()
+    state = reducer(state, { type: 'RECONNECT_STATUS', status: 'reconnecting', attempt: 2 })
+    expect(state.reconnectStatus).toBe('reconnecting')
+    expect(state.reconnectAttempt).toBe(2)
+
+    state = reducer(state, { type: 'RECONNECT_STATUS', status: 'idle', attempt: 0 })
+    expect(state.reconnectStatus).toBe('idle')
+    expect(state.reconnectAttempt).toBe(0)
+  })
+
+  it('MANUAL_RECONNECT bumps a nonce the store watches to kick off a fresh attempt', () => {
+    const state = baseState({ reconnectNonce: 0 })
+    const next = reducer(state, { type: 'MANUAL_RECONNECT' })
+    expect(next.reconnectNonce).toBe(1)
+  })
+
+  it('RESET_SESSION (an intentional disconnect) clears connection info and reconnect state', () => {
+    const state = baseState({
+      connectionInfo: { host: 'x', port: 1, password: '' },
+      reconnectStatus: 'exhausted',
+      reconnectAttempt: 5
+    })
+    const next = reducer(state, { type: 'RESET_SESSION' })
+    expect(next.connectionInfo).toBeNull()
+    expect(next.reconnectStatus).toBe('idle')
+    expect(next.reconnectAttempt).toBe(0)
+    expect(next.phase).toBe('launch')
+  })
+})
+
 describe('leaving a channel', () => {
   it('removes the local user from that channel\'s member cache (the server never echoes our own part back to us)', () => {
     const state = baseState({ channelMembers: { '#general': ['me', 'other'] } })
