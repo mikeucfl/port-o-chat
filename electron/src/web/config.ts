@@ -1,4 +1,3 @@
-import { DEFAULT_SERVER_PORT } from '@shared/constants'
 import type { AppConfig } from '@shared/protocolTypes'
 
 const NICKNAME_KEY = 'portochat:lastNickname'
@@ -13,7 +12,11 @@ export function getConfig(): AppConfig {
   return {
     lastNickname: localStorage.getItem(NICKNAME_KEY) ?? undefined,
     lastHost: location.hostname,
-    lastPort: Number(location.port) || DEFAULT_SERVER_PORT
+    lastPort: location.port
+      ? Number(location.port)
+      : location.protocol === 'https:'
+        ? 443
+        : 80
   }
 }
 
