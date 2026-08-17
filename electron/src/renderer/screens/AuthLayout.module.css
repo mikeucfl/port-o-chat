@@ -6,15 +6,26 @@
   background:
     radial-gradient(circle at 20% 20%, rgba(88, 101, 242, 0.12), transparent 45%),
     var(--bg-base);
+  padding: 20px;
+  padding-top: calc(20px + env(safe-area-inset-top));
+  padding-bottom: calc(20px + env(safe-area-inset-bottom));
+  box-sizing: border-box;
 }
 
 .card {
   width: 420px;
+  max-width: 100%;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 32px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+@media (max-width: 480px) {
+  .card {
+    padding: 24px 20px;
+  }
 }
 
 .title {

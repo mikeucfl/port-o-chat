@@ -52,6 +52,16 @@ textarea {
   color: inherit;
 }
 
+/* iOS Safari auto-zooms the page on focusing any input under 16px —
+   bump just the interactive form fields on narrow (phone) viewports
+   rather than the app's normal 14px everywhere. */
+@media (max-width: 600px) {
+  input,
+  textarea {
+    font-size: 16px;
+  }
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

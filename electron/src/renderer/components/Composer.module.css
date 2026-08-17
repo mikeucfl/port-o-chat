@@ -1,5 +1,5 @@
 .composer {
-  padding: 12px 20px 20px;
+  padding: 12px 20px calc(20px + env(safe-area-inset-bottom));
   flex-shrink: 0;
 }
 
@@ -56,4 +56,13 @@
   font-size: 12px;
   color: var(--text-muted);
   padding: 6px 4px 0;
+}
+
+/* .input's own font-size: inherit above outranks global.css's mobile
+   input-zoom fix (class selector beats element selector), so it needs
+   its own copy here. */
+@media (max-width: 600px) {
+  .input {
+    font-size: 16px;
+  }
 }

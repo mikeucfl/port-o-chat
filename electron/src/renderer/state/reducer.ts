@@ -34,6 +34,7 @@ export type Action =
   | { type: 'CLEAR_MESSAGES'; key: string }
   | { type: 'OPEN_CONVERSATION'; ref: ConversationRef }
   | { type: 'CLOSE_CONVERSATION'; ref: ConversationRef }
+  | { type: 'DESELECT_CONVERSATION' }
   | { type: 'NAME_RESULT'; success: boolean; name: string }
   | { type: 'PASSWORD_RESULT'; success: boolean }
   | { type: 'SET_CONNECTION_INFO'; host: string; port: number; password: string }
@@ -221,6 +222,13 @@ export function reducer(state: AppState, action: Action): AppState {
         firstUnreadMessageId: omitKey(state.firstUnreadMessageId, key)
       }
     }
+
+    case 'DESELECT_CONVERSATION':
+      // Mobile's "back to the list" — unlike CLOSE_CONVERSATION this
+      // doesn't leave the channel or drop it from openConversations, it
+      // just stops treating it as actively viewed (so new messages count
+      // as unread again, same as backgrounding the window).
+      return { ...state, activeConversation: null }
 
     case 'NAME_RESULT':
       return {

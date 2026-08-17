@@ -5,15 +5,18 @@ import styles from './MemberList.module.css'
 export function MemberList({
   members,
   peerKeyWarnings,
-  onOpenFingerprint
+  onOpenFingerprint,
+  embedded = false
 }: {
   members: UserDto[]
   peerKeyWarnings: Record<string, unknown>
   onOpenFingerprint: (userId: string) => void
+  /** True when rendered inside another dialog that already has its own title (see the mobile/tablet members overlay in ChatScreen) — skips this component's own header line. */
+  embedded?: boolean
 }) {
   return (
-    <aside className={styles.panel}>
-      <div className={styles.header}>Members — {members.length}</div>
+    <aside className={embedded ? undefined : styles.panel}>
+      {!embedded && <div className={styles.header}>Members — {members.length}</div>}
       {members.map((member) => (
         <button
           key={member.id}

@@ -7,8 +7,10 @@ import { HostPasswordDialog } from '../components/HostPasswordDialog'
 import { KeyChangeWarningBanner } from '../components/KeyChangeWarningBanner'
 import { MemberList } from '../components/MemberList'
 import { MessageList } from '../components/MessageList'
+import { Modal } from '../components/Modal'
 import { Sidebar } from '../components/Sidebar'
 import { VerifyNudgeBanner } from '../components/VerifyNudgeBanner'
+import { useMediaQuery } from '../hooks/useMediaQuery'
 import { MAX_RECONNECT_ATTEMPTS, useStore } from '../state/store'
 import { conversationKey } from '../state/types'
 import styles from './ChatScreen.module.css'
@@ -20,6 +22,14 @@ export function ChatScreen() {
   )
   const [toast, setToast] = useState<string | null>(null)
   const [showHostPassword, setShowHostPassword] = useState(false)
+  const [showMembers, setShowMembers] = useState(false)
+  // Tablet/phone-landscape: sidebar + chat both fit, but the always-on
+  // member-list column doesn't — it moves behind the header's members
+  // button instead (see .membersButton below). Phone portrait goes
+  // further and stacks the sidebar and the open conversation as separate
+  // full-width screens, one at a time, with a back button between them.
+  const isCompact = useMediaQuery('(max-width: 900px)')
+  const isMobile = useMediaQuery('(max-width: 600px)')
   // Session-only (never persisted, matching the app's zero-persistence
   // stance): which peers we've already nudged to verify their safety
   // number, so the prompt shows once per DM per session rather than every
@@ -42,6 +52,12 @@ export function ChatScreen() {
     const timer = setTimeout(() => setToast(null), 5000)
     return () => clearTimeout(timer)
   }, [toast])
+
+  // Don't let the members overlay from a previous conversation flash back
+  // up when a new one is opened.
+  useEffect(() => {
+    setShowMembers(false)
+  }, [state.activeConversation])
 
   useEffect(() => {
     window.portochat.requestChannelList()
@@ -143,17 +159,37 @@ export function ChatScreen() {
 
       {showHostPassword && <HostPasswordDialog onClose={() => setShowHostPassword(false)} />}
       <div className={styles.layout}>
-        <Sidebar onOpenFingerprint={openFingerprint} />
+        {(!isMobile || !active) && <Sidebar onOpenFingerprint={openFingerprint} />}
 
+        {(!isMobile || !!active) && (
         <div className={styles.mainColumn}>
           {active && title ? (
             <>
               <div className={styles.header}>
+                {isMobile && (
+                  <button
+                    className={styles.backButton}
+                    aria-label="Back to conversation list"
+                    onClick={() => dispatch({ type: 'DESELECT_CONVERSATION' })}
+                  >
+                    ←
+                  </button>
+                )}
                 <span className={styles.headerTitle}>
                   {active.type === 'channel' ? title : `@${title}`}
                 </span>
                 <div className={styles.headerSpacer} />
                 <EncryptionBadge status={encryptionStatus} />
+                {isCompact && (
+                  <button
+                    className={styles.membersButton}
+                    aria-label="Show members"
+                    title="Members"
+                    onClick={() => setShowMembers(true)}
+                  >
+                    👥
+                  </button>
+                )}
                 {active.type === 'channel' && (
                   <button
                     className={styles.leaveButton}
@@ -214,8 +250,9 @@ export function ChatScreen() {
             </div>
           )}
         </div>
+        )}
 
-        {active && (
+        {active && !isCompact && (
           <MemberList
             members={members}
             peerKeyWarnings={state.peerKeyWarnings}
@@ -223,6 +260,20 @@ export function ChatScreen() {
           />
         )}
       </div>
+
+      {active && isCompact && showMembers && (
+        <Modal title={`Members — ${members.length}`} onClose={() => setShowMembers(false)}>
+          <MemberList
+            embedded
+            members={members}
+            peerKeyWarnings={state.peerKeyWarnings}
+            onOpenFingerprint={(userId) => {
+              setShowMembers(false)
+              openFingerprint(userId, userId === state.myUserId)
+            }}
+          />
+        </Modal>
+      )}
 
       {fingerprintTarget && (
         <FingerprintDialog

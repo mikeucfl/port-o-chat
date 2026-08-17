@@ -2,6 +2,10 @@
   height: 100%;
   display: flex;
   flex-direction: column;
+  /* iPhone notch/home-indicator clearance in landscape, where the notch
+     sits on one of the long edges instead of the top. */
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 .hostBanner {
@@ -76,6 +80,24 @@
   grid-template-rows: 100%;
 }
 
+/* Tablet / phone landscape: sidebar + chat both fit, but the always-on
+   220px member column doesn't — it becomes the header's members button
+   (MemberList rendered in a Modal) instead. */
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: 240px 1fr;
+  }
+}
+
+/* Phone portrait: only one full-width pane at a time (sidebar or the
+   open conversation) — ChatScreen.tsx only ever mounts one of them here,
+   so a single grid column is all that's needed. */
+@media (max-width: 600px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
+
 .mainColumn {
   display: flex;
   flex-direction: column;
@@ -97,6 +119,39 @@
 .headerTitle {
   font-weight: 700;
   font-size: 15px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backButton,
+.membersButton {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+  /* 44px is the standard iOS minimum touch target — these live in a
+     48px-tall header, so this centers them within it. */
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  margin: 0 -6px;
+}
+
+.backButton:hover,
+.membersButton:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.backButton {
+  font-size: 22px;
+  font-weight: 700;
 }
 
 .headerSpacer {

@@ -166,7 +166,7 @@
 
 .footer {
   margin-top: auto;
-  padding: 10px 12px;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--border);
   display: flex;
   align-items: center;
@@ -222,4 +222,18 @@
 .iconButton:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+/* Touch targets: mouse pointers tolerate a tight 30px row fine, but a
+   finger needs closer to the ~44px iOS guideline. */
+@media (max-width: 600px) {
+  .item {
+    padding: 11px 10px;
+    font-size: 15px;
+  }
+
+  .iconButton {
+    font-size: 18px;
+    padding: 10px;
+  }
 }
