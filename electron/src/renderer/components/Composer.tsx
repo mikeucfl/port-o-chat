@@ -33,6 +33,7 @@ export function Composer({ target, placeholder }: { target: ConversationRef; pla
     if (raw === '/clear' || raw.startsWith('/clear ')) {
       dispatch({ type: 'CLEAR_MESSAGES', key: conversationKey(target) })
       setText('')
+      textareaRef.current?.focus()
       return
     }
 
@@ -42,6 +43,7 @@ export function Composer({ target, placeholder }: { target: ConversationRef; pla
     const message = isAction ? raw.replace(/^\/me\s?/, '') : raw
     if (isAction && !message) {
       setText('')
+      textareaRef.current?.focus()
       return
     }
 
@@ -52,6 +54,11 @@ export function Composer({ target, placeholder }: { target: ConversationRef; pla
       isAction
     })
     setText('')
+    // Tapping the Send button already avoids blurring (see its
+    // onMouseDown below) — this is the fallback for anything that still
+    // drops focus, so the mobile keyboard doesn't jarringly close and
+    // reopen between messages.
+    textareaRef.current?.focus()
   }
 
   return (
@@ -75,6 +82,11 @@ export function Composer({ target, placeholder }: { target: ConversationRef; pla
         />
         <button
           className={styles.sendButton}
+          // Tapping a button blurs whatever input was focused *before* the
+          // click handler even runs — on mobile that's what closes the
+          // keyboard on every send. Blocking the mousedown's default
+          // action keeps focus on the textarea the whole time instead.
+          onMouseDown={(e) => e.preventDefault()}
           onClick={handleSubmit}
           disabled={!text.trim() || !connected}
         >
