@@ -40,6 +40,7 @@ export type Action =
   | { type: 'SET_CONNECTION_INFO'; host: string; port: number; password: string }
   | { type: 'RECONNECT_STATUS'; status: ReconnectStatus; attempt: number }
   | { type: 'MANUAL_RECONNECT' }
+  | { type: 'RESET_ROSTER' }
   | { type: 'GENERAL_ERROR'; message: string }
   | { type: 'CLEAR_GENERAL_ERROR' }
   | { type: 'PEER_KEY_CHANGED'; event: PeerKeyChangedEvent }
@@ -281,6 +282,32 @@ export function reducer(state: AppState, action: Action): AppState {
 
     case 'MANUAL_RECONNECT':
       return { ...state, reconnectNonce: state.reconnectNonce + 1 }
+
+    case 'RESET_ROSTER':
+      // A full server restart wipes its whole user registry at once, with
+      // no per-user disconnect broadcast for anyone (there's nobody left
+      // server-side to send one) — without this, reconnecting would leave
+      // every previously-known user's stale entry sitting around forever
+      // looking online, alongside whatever fresh (different-id) entries
+      // show up for the same people next: exactly the duplicate-user
+      // report this fixes. There's no persistent identity in this app
+      // (see identity.ts — even the desktop app's key is regenerated on
+      // every launch, by design) to reconcile an old id with its owner's
+      // new one automatically, so this is a real, accepted trade-off, not
+      // an oversight: old messages from people who don't reappear in the
+      // fresh roster will show "Unknown user" post-restart, same as any
+      // other truly-unresolvable sender. Channels themselves are equally
+      // invalidated (a restarted server's channel registry is just as
+      // gone as its user one) — the reconnect loop follows this up with a
+      // fresh channel-list request and rejoin pass regardless.
+      return {
+        ...state,
+        users: {},
+        offlineUserIds: {},
+        hiddenUserIds: {},
+        channels: {},
+        channelMembers: {}
+      }
 
     case 'GENERAL_ERROR':
       return { ...state, generalError: action.message }

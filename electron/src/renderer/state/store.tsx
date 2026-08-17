@@ -120,6 +120,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         })
         if (!nameOk) throw new Error('Nickname rejected')
 
+        // The server we just reconnected to may not be the same process
+        // that was running a moment ago (e.g. a restart) — its whole user
+        // registry could be gone, with everyone (including people we
+        // already knew about) reappearing under brand-new ids and no
+        // "they disconnected" event ever sent for the old ones. Clearing
+        // first avoids stale entries sitting around forever looking
+        // online next to their own replacements — see RESET_ROSTER.
+        dispatch({ type: 'RESET_ROSTER' })
+        window.portochat.requestChannelList()
+
         // Best-effort: rejoin whatever channels were open. The server has
         // no memory of our old membership — a fresh connection is a fresh
         // join, same as any other client's first time.

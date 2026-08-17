@@ -140,6 +140,25 @@ describe('reconnect', () => {
     expect(next.reconnectAttempt).toBe(0)
     expect(next.phase).toBe('launch')
   })
+
+  it('RESET_ROSTER clears stale users/channels from before a reconnect (e.g. a server restart wiping its own registry) without touching message history', () => {
+    const state = baseState({
+      users: { u1: userDto({ id: 'u1' }) },
+      offlineUserIds: { u1: true },
+      hiddenUserIds: { u0: true },
+      channels: { '#general': { name: '#general', e2e: false, creatorId: 'u1', topic: '' } },
+      channelMembers: { '#general': ['u1'] },
+      messages: { 'channel:#general': [msg({ senderId: 'u1' })] }
+    })
+    const next = reducer(state, { type: 'RESET_ROSTER' })
+    expect(next.users).toEqual({})
+    expect(next.offlineUserIds).toEqual({})
+    expect(next.hiddenUserIds).toEqual({})
+    expect(next.channels).toEqual({})
+    expect(next.channelMembers).toEqual({})
+    // Not wiped — only the roster used to resolve display names/status.
+    expect(next.messages['channel:#general']).toHaveLength(1)
+  })
 })
 
 describe('user connection status', () => {
