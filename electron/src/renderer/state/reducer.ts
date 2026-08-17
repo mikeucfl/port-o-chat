@@ -97,19 +97,24 @@ export function reducer(state: AppState, action: Action): AppState {
       const incoming = action.event.user
       const users = { ...state.users }
       const offlineUserIds = { ...state.offlineUserIds }
+      const hiddenUserIds = { ...state.hiddenUserIds }
 
       // User ids are per-connection, not per-person — reconnecting (e.g.
       // the server restarting) gets a brand-new id. The server only ever
       // lets one currently-connected user hold a given name at a time, so
       // if someone's coming online under a name we already have a
       // *different*, offline id for, that offline entry is a stale ghost
-      // of this same person's previous connection — drop it instead of
-      // showing both an online and a "(disconnected)" row for one person.
+      // of this same person's previous connection — hide it from the DM
+      // list instead of showing both an online and a "(disconnected)"
+      // row for one person. Deliberately NOT deleted from `users`: old
+      // chat messages are still keyed by that original sender id
+      // forever, and MessageList resolves display names from `users`
+      // live, not from anything snapshotted per-message.
       if (action.event.connected) {
         for (const [id, u] of Object.entries(users)) {
           if (id !== incoming.id && u.name === incoming.name && offlineUserIds[id]) {
-            delete users[id]
             delete offlineUserIds[id]
+            hiddenUserIds[id] = true
           }
         }
       }
@@ -118,7 +123,7 @@ export function reducer(state: AppState, action: Action): AppState {
       if (action.event.connected) delete offlineUserIds[incoming.id]
       else offlineUserIds[incoming.id] = true
 
-      return { ...state, users, offlineUserIds }
+      return { ...state, users, offlineUserIds, hiddenUserIds }
     }
 
     case 'CHANNEL_LIST': {

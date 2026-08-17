@@ -51,6 +51,7 @@ const api: PortochatApi = {
   setNickname: (name: string) => ipcRenderer.invoke(IPC_INVOKE.setNickname, name),
   setChannelTopic: (channel: string, topic: string) =>
     ipcRenderer.invoke(IPC_INVOKE.setChannelTopic, channel, topic),
+  resetChannelKey: (channel: string) => ipcRenderer.invoke(IPC_INVOKE.resetChannelKey, channel),
 
   getFingerprint: (userId: string) => ipcRenderer.invoke(IPC_INVOKE.getFingerprint, userId),
   getMyFingerprint: () => ipcRenderer.invoke(IPC_INVOKE.getMyFingerprint),

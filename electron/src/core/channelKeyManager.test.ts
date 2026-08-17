@@ -184,6 +184,34 @@ describe('ChannelKeyManager', () => {
     expect(responsibleState?.key.equals(created.key)).toBe(false)
   })
 
+  it('resetChannel recovers a joiner stuck with no key by re-sharing a fresh one to everyone actually present', () => {
+    // Simulates the reconnect race: bob "joins" a channel the server still
+    // thinks alice (his own stale, already-dead old connection) is in, so
+    // nobody ever wraps a key for him — he's stuck. A real, live carol is
+    // also in the channel with the (never-received-by-bob) original key.
+    const alice = sim.addParty('alice')
+    const bob = sim.addParty('bob')
+    const carol = sim.addParty('carol')
+    sim.setMembers('#secret', ['alice', 'carol'])
+    const created = alice.manager.createChannel('#secret')
+    alice.manager.wrapForNewMember('#secret', 'carol')
+    expect(carol.manager.getState('#secret')?.key.equals(created.key)).toBe(true)
+    expect(bob.manager.getState('#secret')).toBeUndefined()
+
+    // The dead "alice" connection is gone from the roster bob and carol
+    // actually see; bob manually recovers.
+    sim.setMembers('#secret', ['bob', 'carol'])
+    bob.manager.resetChannel('#secret')
+
+    const bobState = bob.manager.getState('#secret')
+    const carolState = carol.manager.getState('#secret')
+    expect(bobState).toBeDefined()
+    // carol converges onto bob's new key rather than being left on the old
+    // one bob never had — otherwise the two of them just can't talk either.
+    expect(carolState?.key.equals(bobState?.key as Buffer)).toBe(true)
+    expect(carolState?.key.equals(created.key)).toBe(false)
+  })
+
   it('does not rotate for a channel it has no other members left in (single survivor stays responsible but has nobody to notify)', () => {
     const alice = sim.addParty('alice')
     sim.setMembers('#secret', ['alice'])

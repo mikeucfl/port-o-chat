@@ -116,6 +116,10 @@ export class SessionController {
     this.chat.setChannelTopic(channel, topic)
   }
 
+  resetChannelKey(channel: string): void {
+    this.chat.resetChannelKey(channel)
+  }
+
   getFingerprint(userId: string): string | null {
     return this.chat.getFingerprint(userId)
   }
@@ -192,6 +196,7 @@ export function registerIpcHandlers(controller: SessionController): void {
   ipcMain.handle(IPC_INVOKE.setChannelTopic, (_e, channel: string, topic: string) =>
     controller.setChannelTopic(channel, topic)
   )
+  ipcMain.handle(IPC_INVOKE.resetChannelKey, (_e, channel: string) => controller.resetChannelKey(channel))
 
   ipcMain.handle(IPC_INVOKE.getFingerprint, (_e, userId: string) => controller.getFingerprint(userId))
   ipcMain.handle(IPC_INVOKE.getMyFingerprint, () => controller.getMyFingerprint())

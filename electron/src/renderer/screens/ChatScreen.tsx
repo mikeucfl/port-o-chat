@@ -9,6 +9,7 @@ import { MemberList } from '../components/MemberList'
 import { MessageList } from '../components/MessageList'
 import { Modal } from '../components/Modal'
 import { Sidebar } from '../components/Sidebar'
+import { StuckKeyBanner } from '../components/StuckKeyBanner'
 import { VerifyNudgeBanner } from '../components/VerifyNudgeBanner'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { MAX_RECONNECT_ATTEMPTS, useStore } from '../state/store'
@@ -104,6 +105,20 @@ export function ChatScreen() {
     if (state.channelKeyEpochs[active.name] === undefined) return 'pending'
     return 'encrypted'
   }, [active, state.channels, state.users, state.peerKeyWarnings, state.channelKeyEpochs, members, dmWarning])
+
+  // A channel key normally arrives within a second or two of joining. If
+  // it's still 'pending' after a while, the most likely explanation is
+  // the reconnect race described in channelKeyManager.ts's resetChannel
+  // docstring: the only other "member" the server reports is actually a
+  // stale dead connection that will never send one — with nothing else
+  // to trigger a retry, the joiner would otherwise be stuck forever.
+  const [showKeyStuckBanner, setShowKeyStuckBanner] = useState(false)
+  useEffect(() => {
+    setShowKeyStuckBanner(false)
+    if (encryptionStatus !== 'pending') return
+    const timer = setTimeout(() => setShowKeyStuckBanner(true), 8000)
+    return () => clearTimeout(timer)
+  }, [encryptionStatus, activeKey])
 
   return (
     <div className={styles.page}>
@@ -209,6 +224,14 @@ export function ChatScreen() {
                   canEdit={
                     !!state.myUserId && state.channels[active.name]?.creatorId === state.myUserId
                   }
+                />
+              )}
+              {active.type === 'channel' && showKeyStuckBanner && (
+                <StuckKeyBanner
+                  onReset={() => {
+                    window.portochat.resetChannelKey(active.name)
+                    setShowKeyStuckBanner(false)
+                  }}
                 />
               )}
               {dmWarning ? (

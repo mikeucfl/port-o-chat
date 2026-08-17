@@ -35,9 +35,9 @@ export function Sidebar({
   const otherUsers = useMemo(
     () =>
       Object.values(state.users)
-        .filter((u) => u.id !== state.myUserId)
+        .filter((u) => u.id !== state.myUserId && !state.hiddenUserIds[u.id])
         .sort((a, b) => a.name.localeCompare(b.name)),
-    [state.users, state.myUserId]
+    [state.users, state.myUserId, state.hiddenUserIds]
   )
 
   function openChannel(name: string): void {

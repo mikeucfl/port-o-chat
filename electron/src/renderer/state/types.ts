@@ -60,6 +60,15 @@ export interface AppState {
   users: Record<string, UserDto>
   /** userId -> true for users we've been told disconnected but who still linger in `users` (e.g. still shown in an open DM). Absence means online. */
   offlineUserIds: Record<string, true>
+  /**
+   * userId -> true for a stale id superseded by the same person
+   * reconnecting under a new one. Kept out of the DM list (see Sidebar)
+   * but the `users` record itself is deliberately never deleted for
+   * these — old chat messages are still keyed by the original sender id
+   * forever, and MessageList resolves a sender's display name from
+   * `users` live at render time, not from anything stored per-message.
+   */
+  hiddenUserIds: Record<string, true>
   channels: Record<string, ChannelDto>
   channelMembers: Record<string, string[]>
   openConversations: ConversationRef[]
@@ -95,6 +104,7 @@ export const initialState: AppState = {
   myNickname: '',
   users: {},
   offlineUserIds: {},
+  hiddenUserIds: {},
   channels: {},
   channelMembers: {},
   openConversations: [],

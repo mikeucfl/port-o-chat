@@ -253,6 +253,10 @@ export class ChatController {
     this.session?.requestChannelUserList(name)
   }
 
+  resetChannelKey(name: string): void {
+    this.ensureKeyManager()?.resetChannel(name)
+  }
+
   partChannel(name: string): void {
     this.session?.partChannel(name)
     this.channelMembers.delete(name)

@@ -45,6 +45,8 @@ export interface PortochatApi {
   requestChannelList(): Promise<void>
   setNickname(name: string): Promise<void>
   setChannelTopic(channel: string, topic: string): Promise<void>
+  /** Manual recovery for a joiner who never received a KeyShare (e.g. the only other "member" was actually a stale dead connection that can never send one — see the reconnect-race note in channelKeyManager.ts) — generates a fresh key and re-shares it to everyone currently in the channel, so the group converges on it instead of the joiner being stuck forever. */
+  resetChannelKey(channel: string): Promise<void>
 
   getFingerprint(userId: string): Promise<string | null>
   getMyFingerprint(): Promise<string | null>
@@ -87,6 +89,7 @@ export const IPC_INVOKE = {
   requestChannelList: 'channel:listRequest',
   setNickname: 'user:setNickname',
   setChannelTopic: 'channel:setTopic',
+  resetChannelKey: 'channel:resetKey',
   getFingerprint: 'crypto:getFingerprint',
   getMyFingerprint: 'crypto:getMyFingerprint',
   trustPeerKey: 'crypto:trustPeerKey',

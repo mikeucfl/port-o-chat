@@ -128,6 +128,44 @@ export class ChannelKeyManager {
     this.deps.onKeyReady?.(channel, newEpoch)
   }
 
+  /**
+   * Manual recovery when a joiner's key never arrives — e.g. the reconnect
+   * race in PORTING-NOTES.md, where the only other "member" the server
+   * still reports is actually the same person's stale, already-dead old
+   * connection, which can never send a KeyShare. wrapForNewMember only
+   * runs on *existing* members' clients on a join notification, so a
+   * joiner with no live existing member has no other path forward — this
+   * is user-triggered, not automatic, to avoid two people racing to reset
+   * at once.
+   *
+   * Generates a fresh key and re-shares it to every other current member,
+   * same as a rotation, so the group converges on one key instead of the
+   * resetter silently diverging onto their own. Uses the current time as
+   * the epoch rather than incrementing from a known value (we may not
+   * have ever had one) — this is a rare, manual fallback, not part of the
+   * normal rotation sequence, so it only needs to be virtually guaranteed
+   * higher than any epoch already in use, not precisely coordinated.
+   */
+  resetChannel(channel: string): void {
+    const newKey = this.deps.crypto.generateChannelKey()
+    const epoch = Date.now()
+    for (const memberId of this.deps.getOtherMembers(channel)) {
+      const peerKey = this.deps.getPeerPublicKey(memberId)
+      if (!peerKey) continue
+      const sealed = this.deps.crypto.wrapChannelKey({
+        peerPublicKeyRaw: peerKey,
+        channelKey: newKey,
+        channel,
+        fromUserId: this.deps.myUserId,
+        toUserId: memberId,
+        epoch
+      })
+      this.deps.sendKeyShare(channel, memberId, sealed.ciphertext, sealed.nonce, epoch)
+    }
+    this.channels.set(channel, { key: newKey, epoch })
+    this.deps.onKeyReady?.(channel, epoch)
+  }
+
   forget(channel: string): void {
     this.channels.delete(channel)
   }

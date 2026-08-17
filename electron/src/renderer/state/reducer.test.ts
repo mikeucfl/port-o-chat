@@ -153,7 +153,7 @@ describe('user connection status', () => {
     expect(next.offlineUserIds['u1']).toBe(true)
   })
 
-  it('reconnecting under a new id drops the old offline entry for the same name (no duplicate "mike"s)', () => {
+  it('reconnecting under a new id hides the old entry from the DM list, without deleting it (old messages still need it for the sender name)', () => {
     let state = baseState({ users: { u1: userDto({ id: 'u1', name: 'mike' }) } })
     state = reducer(state, {
       type: 'USER_CONNECTION_STATUS',
@@ -166,11 +166,15 @@ describe('user connection status', () => {
       type: 'USER_CONNECTION_STATUS',
       event: { user: userDto({ id: 'u2', name: 'mike' }), connected: true }
     })
-    expect(next.users['u1']).toBeUndefined()
+    // Still resolvable (e.g. by MessageList looking up an old message's
+    // sender), just no longer offline and now flagged hidden so the DM
+    // sidebar (which filters on hiddenUserIds) doesn't show it.
+    expect(next.users['u1']).toBeDefined()
     expect(next.offlineUserIds['u1']).toBeUndefined()
+    expect(next.hiddenUserIds['u1']).toBe(true)
     expect(next.users['u2']).toBeDefined()
     expect(next.offlineUserIds['u2']).toBeUndefined()
-    expect(Object.keys(next.users)).toEqual(['u2'])
+    expect(next.hiddenUserIds['u2']).toBeUndefined()
   })
 
   it('does not touch a same-named entry that is still online (server already guarantees uniqueness, so this should never happen, but stay conservative)', () => {

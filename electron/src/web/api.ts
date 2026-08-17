@@ -101,6 +101,10 @@ export function createBrowserApi(): PortochatApi {
       chat.setChannelTopic(channel, topic)
       return Promise.resolve()
     },
+    resetChannelKey: (channel: string) => {
+      chat.resetChannelKey(channel)
+      return Promise.resolve()
+    },
 
     getFingerprint: (userId: string) => Promise.resolve(chat.getFingerprint(userId)),
     getMyFingerprint: () => Promise.resolve(chat.getMyFingerprint()),
